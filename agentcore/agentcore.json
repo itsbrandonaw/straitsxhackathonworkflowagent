@@ -1,0 +1,12 @@
+{
+  "name": "happy-scouts",
+  "agents": {
+    "scouts": {
+      "language": "TypeScript",
+      "build": "CodeZip",
+      "entryPoint": "apps/agentcore/dist/server.js",
+      "runtime": "NODE_22",
+      "protocol": "HTTP"
+    }
+  }
+}

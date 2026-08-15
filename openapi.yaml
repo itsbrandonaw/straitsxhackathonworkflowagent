@@ -1,0 +1,140 @@
+openapi: 3.1.0
+info:
+  title: Happy Scouts API
+  version: 0.1.0
+servers:
+  - url: http://localhost:3001
+paths:
+  /v1/scout-runs:
+    post:
+      summary: Start an idempotent Scout Activity
+      parameters:
+        - in: header
+          name: idempotency-key
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StartScoutRunRequest" }
+      responses:
+        "202": { description: Activity accepted }
+  /v1/scout-runs/{activityId}:
+    get:
+      summary: Read the current Activity state
+      parameters:
+        - $ref: "#/components/parameters/ActivityId"
+      responses:
+        "200": { description: Activity state }
+  /v1/scout-runs/{activityId}/pause:
+    post:
+      summary: Pause active Scout work
+      parameters: [{ $ref: "#/components/parameters/ActivityId" }]
+      responses: { "200": { description: Paused Activity } }
+  /v1/scout-runs/{activityId}/resume:
+    post:
+      summary: Resume paused Scout work
+      parameters: [{ $ref: "#/components/parameters/ActivityId" }]
+      responses: { "200": { description: Resumed Activity } }
+  /v1/scout-runs/{activityId}/cancel:
+    post:
+      summary: Cancel incomplete Scout work
+      parameters: [{ $ref: "#/components/parameters/ActivityId" }]
+      responses: { "200": { description: Cancelled Activity } }
+  /v1/scout-runs/{activityId}/confirm:
+    post:
+      summary: Confirm selected items
+      parameters: [{ $ref: "#/components/parameters/ActivityId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [itemIds]
+              properties:
+                itemIds: { type: array, minItems: 1, items: { type: string } }
+      responses: { "200": { description: Updated Activity } }
+  /v1/scout-runs/{activityId}/closer-handoff:
+    get:
+      summary: Return confirmed item URLs for Closer
+      parameters: [{ $ref: "#/components/parameters/ActivityId" }]
+      responses:
+        "200":
+          description: Closer handoff
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CloserHandoff" }
+  /v1/scout-runs/{activityId}/items/{itemId}/reject:
+    post:
+      summary: Reject the current item selection and use a retained alternative
+      parameters:
+        - $ref: "#/components/parameters/ActivityId"
+        - in: path
+          name: itemId
+          required: true
+          schema: { type: string }
+      responses: { "200": { description: Updated selection } }
+  /v1/scouts/{scoutId}/snapshot:
+    get:
+      summary: Return or redirect to the Scout's latest snapshot
+      parameters:
+        - in: path
+          name: scoutId
+          required: true
+          schema: { type: string }
+      responses: { "200": { description: Image }, "302": { description: Presigned S3 image } }
+  /v1/scouts/{scoutId}/live-view-url:
+    post:
+      summary: Generate an AgentCore Live View URL
+      parameters:
+        - in: path
+          name: scoutId
+          required: true
+          schema: { type: string }
+      responses: { "200": { description: Short-lived Live View URL }, "503": { description: Unavailable } }
+components:
+  parameters:
+    ActivityId:
+      in: path
+      name: activityId
+      required: true
+      schema: { type: string }
+  schemas:
+    StartScoutRunRequest:
+      type: object
+      required: [activityId, items]
+      properties:
+        activityId: { type: string }
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [itemId, name, specs]
+            properties:
+              itemId: { type: string }
+              name: { type: string }
+              specs: { type: object, additionalProperties: { type: string } }
+              quantity: { type: integer, minimum: 1, default: 1 }
+              priceCapSGD: { type: number, exclusiveMinimum: 0 }
+              rankingPreset:
+                type: string
+                enum: [best_overall, lowest_price, trusted_seller, best_reviewed]
+                default: best_overall
+              shipToCountry: { type: string, default: SG }
+              locale: { type: string, default: en-SG }
+    CloserHandoff:
+      type: object
+      required: [activityId, selections]
+      properties:
+        activityId: { type: string }
+        selections:
+          type: array
+          items:
+            type: object
+            required: [itemId, url]
+            properties:
+              itemId: { type: string }
+              url: { type: string, format: uri }
