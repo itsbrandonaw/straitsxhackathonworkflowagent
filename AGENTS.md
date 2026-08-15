@@ -21,6 +21,7 @@
 
 - TypeScript domain logic must not import AWS SDK packages.
 - AWS behavior belongs behind ports in `@happy/runtime` and adapters in `@happy/aws`.
+- Any AWS-free Playwright, Ollama, filesystem, or SQLite implementation must use the same runtime ports; do not fork the coordinator or Comparator.
 - Persist Activity state before publishing its event.
 - Never run more than five item pairs or ten Scouts concurrently.
 - The Comparator is deterministic; model output may supply evidence but not final arithmetic.

@@ -39,6 +39,8 @@ After every item reaches `Selected`, the user sees one chosen listing per item. 
 
 The intended AWS-native stack is AgentCore Runtime, AgentCore Browser, Amazon Bedrock, DynamoDB, S3, API Gateway, Lambda, CloudWatch, Cognito/JWT authentication, and TypeScript CDK. Local adapters must keep development and tests independent of AWS credentials.
 
+The team also needs an AWS-free fallback in case hackathon account access is not supplied. The preferred fallback preserves the current coordinator and contracts while replacing AWS adapters with local Playwright Chromium, an Ollama structured-output extractor, local/in-memory screenshot storage, and optionally SQLite or Postgres. Browserbase is an optional hosted-browser substitute when a separate account and API key are acceptable, but it is not required for the zero-cloud path.
+
 ## StraitsX lessons relevant to Scouts
 
 - StraitsX provides a one-time card MCP in sandbox and production plus XSGD settlement rails.
@@ -53,6 +55,7 @@ The repository is public. Real secrets and private keys must never be committed.
 ## Remaining external inputs
 
 - AWS account, region access, AgentCore resources, and an enabled Bedrock model.
+- A decision on whether to implement the local Playwright/Ollama fallback before or only if AWS access is delayed.
 - The production UI repository or integration branch.
 - Closer's merchant-payment eligibility rules, if it exposes any beyond accepting the selected URL.
 - Two or three merchants verified to work reliably for the live demo, while the product remains merchant-agnostic.
