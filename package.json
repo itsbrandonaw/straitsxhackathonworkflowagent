@@ -8,11 +8,11 @@
   },
   "scripts": {
     "build": "pnpm -r --if-present build",
-    "dev": "pnpm -r --filter @happy/contracts --filter @happy/core --filter @happy/runtime --filter @happy/local build && pnpm --parallel --filter @happy/api --filter @happy/harness dev",
-    "dev:mock": "cross-env SCOUT_MODE=mock pnpm dev",
-    "dev:local-agent": "cross-env SCOUT_MODE=local pnpm dev",
-    "browser:install": "pnpm --filter @happy/local exec playwright install chromium",
-    "smoke:local-browser": "pnpm -r --filter @happy/contracts --filter @happy/core --filter @happy/runtime build && pnpm --filter @happy/local smoke",
+    "dev": "pnpm -r --filter @happy/contracts --filter @happy/core --filter @happy/runtime build && pnpm --parallel --filter @happy/api --filter @happy/harness dev",
+    "agentcore:configure": "node scripts/configure-agentcore.mjs",
+    "agentcore:validate": "agentcore validate -d .agentcore-project",
+    "agentcore:dry-run": "cd .agentcore-project && ../node_modules/.bin/agentcore deploy --dry-run --target hackathon",
+    "agentcore:deploy": "cd .agentcore-project && ../node_modules/.bin/agentcore deploy --target hackathon",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -20,12 +20,11 @@
     "validate": "pnpm secrets:check && pnpm typecheck && pnpm test && pnpm build"
   },
   "devDependencies": {
+    "@aws/agentcore": "0.27.0",
     "@happy/contracts": "workspace:*",
     "@happy/core": "workspace:*",
-    "@happy/local": "workspace:*",
     "@happy/runtime": "workspace:*",
     "@types/node": "^22.0.0",
-    "cross-env": "^10.0.0",
     "tsx": "^4.0.0",
     "typescript": "^5.9.0",
     "vitest": "^3.2.0"

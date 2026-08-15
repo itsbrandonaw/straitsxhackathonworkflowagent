@@ -49,7 +49,6 @@ export class MockScoutDriver implements ScoutDriver {
       );
       await context.callbacks.onStage("analyzing", `Checking ${merchant}`);
       await delay(this.actionDelayMs, context.signal);
-      await context.callbacks.onStage("gathering", `Saving candidate ${index + 1}`);
       const seed = `${context.activityId}:${context.scout.id}:${context.itemAttempt}:${index}`;
       const price = stableNumber(seed, 20, 95);
       const candidate: Candidate = {
@@ -65,8 +64,11 @@ export class MockScoutDriver implements ScoutDriver {
         variant: Object.values(context.item.specs).join(", ") || "standard",
         quantity: context.item.quantity,
         priceSGD: price,
+        priceMinor: price * 100,
         shippingSGD: index % 2 === 0 ? 0 : 4,
+        shippingMinor: index % 2 === 0 ? 0 : 400,
         totalPriceSGD: price + (index % 2 === 0 ? 0 : 4),
+        amountMinor: (price + (index % 2 === 0 ? 0 : 4)) * 100,
         currency: "SGD",
         inStock: true,
         shipsToCountry: true,
@@ -85,6 +87,7 @@ export class MockScoutDriver implements ScoutDriver {
         merchantPaymentEligible: true
       };
       await context.callbacks.onCandidate(candidate);
+      await context.callbacks.onStage("gathering", `Saved candidate ${index + 1}`);
       await context.callbacks.onScreenshot(
         screenshotSvg(context.scout.id, context.item.name, "Gathering", url),
         "image/svg+xml"

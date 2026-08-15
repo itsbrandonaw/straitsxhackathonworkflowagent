@@ -35,23 +35,9 @@ export function assertSafePublicUrl(value: string): URL {
 
 export function canonicalizeListingUrl(value: string): string {
   const url = assertSafePublicUrl(value);
-  const hostname = url.hostname.toLowerCase();
-  const amazonProduct = hostname.includes("amazon.") ? url.pathname.match(/\/dp\/([a-z0-9]{8,})/i) : undefined;
-  const shopeeProduct = hostname.endsWith("shopee.sg")
-    ? url.pathname.match(/-i\.(\d+)\.(\d+)/i) ?? url.pathname.match(/\/product\/(\d+)\/(\d+)/i)
-    : undefined;
-  if (amazonProduct) {
-    url.pathname = `/dp/${amazonProduct[1]!.toUpperCase()}`;
-    url.search = "";
-  } else if (shopeeProduct) {
-    url.pathname = `/product/${shopeeProduct[1]}/${shopeeProduct[2]}`;
-    url.search = "";
-  } else if (hostname.endsWith("lazada.sg") && /\/products\/.+\.html$/i.test(url.pathname)) {
-    url.search = "";
-  }
   const removable = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "gclid", "fbclid"];
   for (const key of removable) url.searchParams.delete(key);
-  url.hostname = hostname;
+  url.hostname = url.hostname.toLowerCase();
   if (url.pathname.length > 1) url.pathname = url.pathname.replace(/\/$/, "");
   return url.toString();
 }

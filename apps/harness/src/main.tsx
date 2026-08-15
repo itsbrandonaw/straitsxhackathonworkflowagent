@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { ActivityEvent, ActivityRecord, StartScoutRunRequest } from "@happy/contracts";
-import { ScoutFrameStream } from "./ScoutFrameStream.js";
+import { LiveViewer } from "./LiveViewer.js";
 import "./styles.css";
 
 const apiUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
@@ -9,19 +9,10 @@ const wsUrl = import.meta.env.VITE_WS_URL ?? "ws://localhost:3001/v1/events";
 
 const demoItems = ["Graphics card", "Processor", "Motherboard", "Memory", "Power supply", "Case"];
 
-type Health = {
-  status: string;
-  mode: "mock" | "local" | "aws";
-  browser: "synthetic" | "playwright" | "agentcore";
-  extraction: "fixture" | "ollama" | "bedrock";
-  persistence: "memory" | "local_disk" | "dynamodb";
-  imagery: "snapshots" | "binary_websocket" | "agentcore_live_view";
-};
-
-function demoRequest(activityId: string, count = demoItems.length): StartScoutRunRequest {
+function demoRequest(activityId: string): StartScoutRunRequest {
   return {
     activityId,
-    items: demoItems.slice(0, count).map((name, index) => ({
+    items: demoItems.map((name, index) => ({
       itemId: `item-${index + 1}`,
       name,
       specs: { use: "budget gaming PC", preference: "best value" },
@@ -37,16 +28,8 @@ function App() {
   const [activity, setActivity] = useState<ActivityRecord>();
   const [events, setEvents] = useState<ActivityEvent[]>([]);
   const [error, setError] = useState<string>();
-  const [health, setHealth] = useState<Health>();
-  const [handoff, setHandoff] = useState<string>();
   const lastSequence = useRef(0);
   const activityId = activity?.id;
-
-  useEffect(() => {
-    void fetch(`${apiUrl}/health`).then((response) => response.json())
-      .then((value: Health) => setHealth(value))
-      .catch(() => setError("Could not read API runtime information."));
-  }, []);
 
   useEffect(() => {
     if (!activityId) return;
@@ -97,16 +80,15 @@ function App() {
     itemName: item.request.name
   }))) ?? [], [activity]);
 
-  const startDemo = async (count: number) => {
+  const startDemo = async () => {
     setError(undefined);
     setEvents([]);
-    setHandoff(undefined);
     lastSequence.current = 0;
     const id = `demo-${crypto.randomUUID()}`;
     const response = await fetch(`${apiUrl}/v1/scout-runs`, {
       method: "POST",
       headers: { "content-type": "application/json", "idempotency-key": id },
-      body: JSON.stringify(demoRequest(id, count))
+      body: JSON.stringify(demoRequest(id))
     });
     if (!response.ok) {
       setError(await response.text());
@@ -115,60 +97,11 @@ function App() {
     setActivity(await response.json() as ActivityRecord);
   };
 
-  const reject = async (itemId: string) => {
-    if (!activityId) return;
-    const response = await fetch(`${apiUrl}/v1/scout-runs/${activityId}/items/${itemId}/reject`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ reason: "Rejected from the developer harness" })
-    });
-    if (!response.ok) return setError(await response.text());
-    setActivity(await response.json() as ActivityRecord);
-  };
-
-  const confirmSelected = async () => {
-    if (!activityId || !activity) return;
-    const itemIds = activity.items.filter((item) => item.status === "selected").map((item) => item.request.itemId);
-    if (itemIds.length === 0) return;
-    const response = await fetch(`${apiUrl}/v1/scout-runs/${activityId}/confirm`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ itemIds })
-    });
-    if (!response.ok) return setError(await response.text());
-    const next = await response.json() as ActivityRecord;
-    setActivity(next);
-    if (next.status === "ready_for_closer") {
-      const handoffResponse = await fetch(`${apiUrl}/v1/scout-runs/${activityId}/closer-handoff`);
-      if (handoffResponse.ok) setHandoff(JSON.stringify(await handoffResponse.json(), null, 2));
-    }
-  };
-
-  const openLiveView = async (scoutId: string) => {
-    const response = await fetch(`${apiUrl}/v1/scouts/${scoutId}/live-view-url`, { method: "POST" });
-    if (!response.ok) return setError(await response.text());
-    const value = await response.json() as { url: string };
-    window.open(value.url, "_blank", "noopener,noreferrer");
-  };
-
   return <main>
     <header>
-      <div>
-        <span className="brand">Happy</span><span className="eyebrow">Scouts developer harness</span>
-        {health && <div className="runtimeBadges">
-          <span>{health.mode === "local" ? "LOCAL REAL BROWSER" : health.mode.toUpperCase()}</span>
-          <span>{health.browser.toUpperCase()}</span>
-          <span>{health.extraction.toUpperCase()}</span>
-          <span>{health.persistence.toUpperCase()}</span>
-        </div>}
-      </div>
-      <div className="headerActions">
-        <button className="secondary" onClick={() => void startDemo(1)}>Start one-item test</button>
-        <button onClick={() => void startDemo(6)}>Start six-item demo</button>
-      </div>
+      <div><span className="brand">Happy</span><span className="eyebrow">Scouts developer harness</span></div>
+      <button onClick={() => void startDemo()}>Start six-item demo</button>
     </header>
-    {health?.extraction === "fixture" && health.mode === "local" &&
-      <p className="warning">Real Chromium is active, but candidate evidence is fixture-generated. This validates browsing and observability, not product analysis.</p>}
     {error && <p className="error">{error}</p>}
     {!activity && <section className="empty">Start the deterministic demo to verify queueing, stages, imagery, comparison, and event replay.</section>}
     {activity && <>
@@ -184,27 +117,15 @@ function App() {
           {item.scouts.map((scout) => <span className={`stage stage-${scout.stage}`} key={scout.id}>
             {scout.id.endsWith("-a") ? "A" : "B"}: {scout.stage}
           </span>)}
-          <div className="itemActions">
-            {item.lowCoverage && <span className="coverage">Low coverage</span>}
-            {item.status === "selected" && <button className="small secondary" onClick={() => void reject(item.request.itemId)}>Reject</button>}
-          </div>
         </div>)}
       </section>
-      {activity.status === "awaiting_confirmation" && <div className="confirmBar">
-        <span>Review the selections, then confirm all selected items for Closer.</span>
-        <button onClick={() => void confirmSelected()}>Confirm selected items</button>
-      </div>}
       <section className="grid">
         {scouts.map((scout) => <article className={`tile tile-${scout.stage}`} key={scout.id}>
-          <div className="browserBar"><span />{scout.snapshotKey ? "browser feed" : "waiting"}</div>
-          <ScoutFrameStream
-            apiUrl={apiUrl}
-            imagery={health?.imagery ?? "snapshots"}
-            scoutId={scout.id}
-            stage={scout.stage}
-            snapshotKey={scout.snapshotKey}
-          />
-          <footer><div><strong>{scout.itemName}</strong><small>{scout.strategy}</small><small>{scout.detail}</small></div><div className="tileActions"><span>{scout.stage}</span>{health?.mode === "local" && <button className="small secondary" onClick={() => void openLiveView(scout.id)}>Expand</button>}</div></footer>
+          <div className="browserBar"><span />AgentCore Live View</div>
+          <div className="placeholder">
+            {scout.browserSessionId ? "Live View is delivered directly to the production website." : "Queued for a browser slot"}
+          </div>
+          <footer><div><strong>{scout.itemName}</strong><small>{scout.strategy}</small></div><span>{scout.stage}</span></footer>
         </article>)}
       </section>
       <section className="events">
@@ -213,9 +134,9 @@ function App() {
           {event.sequence.toString().padStart(3, "0")} {event.type} {event.scoutId ?? event.itemId ?? ""}
         </code>)}
       </section>
-      {handoff && <section className="handoff"><h2>Closer handoff</h2><pre>{handoff}</pre></section>}
     </>}
   </main>;
 }
 
-createRoot(document.getElementById("root")!).render(<React.StrictMode><App /></React.StrictMode>);
+const root = createRoot(document.getElementById("root")!);
+root.render(<React.StrictMode>{window.location.pathname === "/live" ? <LiveViewer /> : <App />}</React.StrictMode>);

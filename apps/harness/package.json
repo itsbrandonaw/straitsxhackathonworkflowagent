@@ -9,9 +9,16 @@
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {
+    "@babel/runtime": "^8.0.0",
+    "@cloudscape-design/components": "^3.0.1347",
+    "@cloudscape-design/design-tokens": "^3.0.107",
+    "@cloudscape-design/global-styles": "^1.0.66",
     "@happy/contracts": "workspace:*",
+    "bedrock-agentcore": "^0.4.3",
+    "prop-types": "^15.8.1",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "vite-plugin-static-copy": "^4.1.1"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",

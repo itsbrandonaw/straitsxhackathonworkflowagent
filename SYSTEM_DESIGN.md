@@ -4,43 +4,26 @@
 
 ```mermaid
 flowchart LR
-  UI[Production UI or developer harness] --> API[HTTP and WebSocket API]
-  API --> DB[(Memory, local disk, or DynamoDB)]
-  API --> RT[Activity coordinator]
-  RT --> BR[Browser-session port]
-  RT --> FM[Candidate-extractor port]
+  UI[Production UI] --> API[Control API and WebSocket API]
+  API --> RT[AgentCore Runtime Activity]
+  RT --> DB[(DynamoDB)]
+  RT --> BR[AgentCore Browser sessions]
+  BR --> PW[Playwright over presigned CDP]
+  PW --> WEB[Public merchant and search pages]
+  RT --> FM[Amazon Bedrock extraction]
   RT --> CMP[Deterministic Comparator]
-  BR --> SHOT[Filesystem or S3 screenshots]
-  RT --> DB
-  RT --> API
-  BR -. expanded viewer .-> UI
+  PW -. optional diagnostics .-> SHOT[S3 screenshots]
+  UI --> VIEWER[Read-only Scout viewer]
+  VIEWER --> API
+  BR -. direct DCV Live View .-> VIEWER
   CMP --> HANDOFF[Closer handoff]
 ```
 
 One Activity coordinator owns the item queue. Five workers process item pairs, creating no more than ten browser sessions. All mutable state is persisted before its corresponding event is published.
 
-## Runtime profiles
+The real Activity runs asynchronously in AgentCore Runtime. AWS implementations remain behind runtime interfaces, while domain and Comparator code do not import AWS SDK packages. A deterministic in-memory mock exists only for unit, contract, coordinator, and UI-harness testing; it is not a real-browser runtime.
 
-The API selects an explicit dependency profile at startup:
-
-| Profile | Browser | Extraction | State and images |
-|---|---|---|---|
-| `mock` | Synthetic | Deterministic fixtures | Memory |
-| `local` | One local Chromium process with an isolated Playwright context per Scout | Ollama, or fixture only for non-production browser tests | Atomic JSON/event files and image files under `.happy-data/` |
-| `aws` | AgentCore Browser | Bedrock | DynamoDB and S3 through the separate AgentCore application |
-
-The portable `BrowserScoutDriver` owns the search/analyze/gather loop and depends only on project ports. Playwright, Ollama, filesystem, AgentCore, Bedrock, DynamoDB, and S3 remain adapters. The Comparator is shared by every profile.
-
-```mermaid
-flowchart TB
-  DRIVER["Portable BrowserScoutDriver"] --> SESSION["BrowserSessionProvider"]
-  DRIVER --> SEARCH["SearchSource"]
-  DRIVER --> EXTRACT["CandidateExtractor"]
-  SESSION --> LOCAL_BROWSER["Local Playwright"]
-  SESSION --> AWS_BROWSER["AgentCore Browser"]
-  EXTRACT --> OLLAMA["Ollama"]
-  EXTRACT --> BEDROCK["Bedrock"]
-```
+Deployment begins from a trusted checkout of the public repository. The AgentCore CLI uses a generated, gitignored target configuration and remotely builds the root Dockerfile for Linux ARM64. AgentCore Runtime receives the resulting ECR image rather than GitHub credentials or a live repository mount.
 
 ## State
 
@@ -68,7 +51,7 @@ The item-level state is `queued`, `searching`, `comparing`, `selected`, `confirm
 1. Curator submits an Activity with locked item specifications and an idempotency key.
 2. The API validates the request and creates two queued Scouts per item.
 3. The coordinator runs up to five item pairs concurrently.
-4. Scouts publish stage changes, candidate results, and screenshot references.
+4. Scouts persist stage changes and candidate results, then publish website callbacks.
 5. Candidates are canonicalized, safety-checked, deduplicated, and persisted.
 6. Comparator filters, scores, ranks, and records the selection.
 7. The UI confirms selections; the API emits `activity.ready_for_closer`.
@@ -89,17 +72,14 @@ The default preset weights Price 40%, Authenticity 35%, and Reviews 25%. Other p
 
 ## Observability
 
-Progress and visual streams are independent. Durable milestone snapshots are captured after meaningful actions at no more than one frame per second, with an idle heartbeat every five seconds. AWS S3 objects are encrypted, expire after one day, and use short-lived URLs. Local milestone images use opaque hashed paths, one-day expiry, and a five-image per-Scout cap.
+Progress and visual streams are independent. Direct AgentCore DCV Live View is the primary UI observability path for every active Scout; screenshots are optional internal evidence or diagnostics and never drive the website tiles. The website receives a stable viewer URL containing an opaque fragment capability. The read-only viewer exchanges that capability for a fresh, short-lived signed connection and then connects the user's browser directly to AgentCore, so signed URLs and video never traverse website state or callbacks. Viewer responses allow framing only from configured Happy frontend origins.
 
-The local runtime also exposes ephemeral JPEG frames through an in-memory `LiveFrameHub` and `GET WS /v1/scouts/{scoutId}/frames?view=collapsed|expanded`, using subprotocol `happy.scout-jpeg.v1`. Visible collapsed tiles request 0.5 FPS, the expanded viewer requests 3 FPS, and the server caps total demand at 12 FPS by default. A page is captured only once per Scout interval even with multiple viewers. Live bytes are latest-only, dropped under backpressure, removed when demand ends, and never enter disk state or Activity event replay. The UI double-buffers and cross-fades frames while truthful stage state continues through the Activity WebSocket.
-
-AWS expanded views continue to use direct presigned AgentCore Live View rather than proxying video through this channel.
+The item-pair sequencer publishes durable `item.progress` values `0 Discovering`, `1 Analyzing`, `2 Gathering`, `3 Comparing`, and `4 Selected`. It suppresses unchanged values and preserves the previous durable stage, including the intentional `2 -> 0` coverage loop. Each Scout publishes its own real stage through `agent.update`; no synthetic lag is added.
 
 ## Security boundary
 
 - Page content is untrusted data and never becomes system or tool instruction.
 - Navigation is limited to public HTTP/HTTPS targets; localhost, private IPs, file URLs, and executable schemes are rejected.
-- The local browser resolves requested hostnames and blocks routes whose resolved addresses are private, loopback, link-local, or otherwise non-public.
 - Scouts cannot authenticate, add to cart, download, request cards, or perform payment operations.
 - Logs, fixtures, prompts, screenshots, and events are sanitized.
 - Runtime secrets come from environment variables or AWS Secrets Manager and never enter repository files.
@@ -109,10 +89,9 @@ AWS expanded views continue to use direct presigned AgentCore Live View rather t
 - Retry a failed operation once, then use up to two backup source strategies.
 - Compare two candidates only after recovery is exhausted and flag `lowCoverage`.
 - Fail an item with fewer than two valid candidates.
-- A screenshot or Live View failure is logged but does not fail research.
+- A screenshot or Live View failure is logged but does not fail research or stage callbacks.
 - Browser sessions close in `finally` blocks and abandoned sessions are eligible for cleanup.
 - Rejection advances through retained rankings before restarting only that item.
-- A duplicate rejected by the shared pool does not count toward a Scout's one-to-three candidate quota.
 
 ## Integration contracts
 

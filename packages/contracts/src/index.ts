@@ -96,8 +96,11 @@ export const CandidateSchema = z.object({
   variant: z.string().min(1),
   quantity: z.number().int().positive(),
   priceSGD: z.number().nonnegative(),
+  priceMinor: z.number().int().nonnegative(),
   shippingSGD: z.number().nonnegative().optional(),
+  shippingMinor: z.number().int().nonnegative().optional(),
   totalPriceSGD: z.number().nonnegative(),
+  amountMinor: z.number().int().nonnegative(),
   currency: z.literal("SGD"),
   inStock: z.boolean(),
   shipsToCountry: z.boolean(),
@@ -142,7 +145,6 @@ export type ScoutRecord = {
   listingsGathered: number;
   browserSessionId?: string;
   snapshotKey?: string;
-  detail?: string;
   error?: string;
 };
 
@@ -186,6 +188,7 @@ export const ActivityEventTypeSchema = z.enum([
   "item.failed",
   "scout.started",
   "scout.stage_changed",
+  "scout.browser_session_ended",
   "scout.snapshot_ready",
   "scout.failed",
   "candidate.accepted",
@@ -220,36 +223,3 @@ export type CloserHandoff = {
   activityId: string;
   selections: Array<{ itemId: string; url: string }>;
 };
-
-export const LIVE_FRAME_PROTOCOL = "happy.scout-jpeg.v1" as const;
-export const LiveFrameViewSchema = z.enum(["collapsed", "expanded"]);
-export type LiveFrameView = z.infer<typeof LiveFrameViewSchema>;
-
-const LiveFrameStatusBaseSchema = z.object({
-  schemaVersion: z.literal(1),
-  scoutId: z.string().min(1),
-  view: LiveFrameViewSchema
-});
-
-export const LiveFrameStatusMessageSchema = z.discriminatedUnion("type", [
-  LiveFrameStatusBaseSchema.extend({
-    type: z.literal("ready"),
-    framesPerSecond: z.number().nonnegative()
-  }),
-  LiveFrameStatusBaseSchema.extend({
-    type: z.literal("rate_changed"),
-    framesPerSecond: z.number().nonnegative()
-  }),
-  LiveFrameStatusBaseSchema.extend({
-    type: z.literal("completed"),
-    framesPerSecond: z.literal(0)
-  }),
-  z.object({
-    schemaVersion: z.literal(1),
-    type: z.literal("error"),
-    scoutId: z.string().min(1),
-    view: z.string().optional(),
-    error: z.string().min(1)
-  })
-]);
-export type LiveFrameStatusMessage = z.infer<typeof LiveFrameStatusMessageSchema>;

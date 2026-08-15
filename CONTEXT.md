@@ -31,21 +31,17 @@ The visible Scout pipeline is:
 
 `Pending -> Discovering -> Analyzing -> Gathering -> Discovering... -> Comparing -> Selected`
 
-Every Scout has its own tile and stage marker. The interface can show ten active tiles and queued tiles for overflow Scouts. Collapsed tiles receive low-rate screenshots; an expanded tile can use AgentCore Browser Live View. Observability failures must not stop research.
+Every Scout has its own tile and stage marker. The interface can show ten active tiles and queued tiles for overflow Scouts. Active production tiles use read-only AgentCore Browser Live View directly; optional screenshots are retained only for internal evidence or diagnostics. Observability failures must not stop research.
 
 After every item reaches `Selected`, the user sees one chosen listing per item. Confirmation produces the Closer handoff. Rejection is lower priority: use the next retained ranked candidate first, and restart only the rejected item after the leading alternatives are exhausted.
 
 ## AWS direction
 
-The intended AWS-native stack is AgentCore Runtime, AgentCore Browser, Amazon Bedrock, DynamoDB, S3, API Gateway, Lambda, CloudWatch, Cognito/JWT authentication, and TypeScript CDK. Local adapters must keep development and tests independent of AWS credentials.
+The sole real-agent stack is AgentCore Runtime, AgentCore Browser, Amazon Bedrock, DynamoDB, S3, API Gateway, Lambda, CloudWatch, Cognito/JWT authentication, and TypeScript CDK. Each active Scout receives an AgentCore Browser session and connects through Playwright/CDP. Bedrock extracts structured evidence from untrusted page content; deterministic TypeScript performs the final comparison.
 
-The team also needs an AWS-free fallback in case hackathon account access is not supplied. The preferred fallback preserves the current coordinator and contracts while replacing AWS adapters with local Playwright Chromium, an Ollama structured-output extractor, local/in-memory screenshot storage, and optionally SQLite or Postgres. Browserbase is an optional hosted-browser substitute when a separate account and API key are acceptable, but it is not required for the zero-cloud path.
+The earlier AWS-free Playwright/Ollama and Browserbase contingency has been withdrawn. The in-memory mock remains only for unit tests, coordinator validation, contract testing, and UI development. It does not browse real websites and must not be presented as a production fallback.
 
-The AWS-free implementation is now additive and operational. It defaults to two concurrent items/four isolated Playwright contexts, provides a screenshot-stream viewer plus optional headed Chromium, uses Ollama for real structured extraction, and persists Activity state, replayable events, and short-lived screenshots under a gitignored local data directory. An explicitly labelled fixture extractor permits browser-only integration testing without a model and is disabled in production.
-
-A smoother-imagery enhancement from `SMOOTH_IMAGERY_IMPLEMENTATION_PLAN.md` is implemented. It separates durable milestone snapshots from ephemeral live JPEG frames, uses a server-capped per-Scout binary WebSocket, targets 0.5 FPS for collapsed tiles and 3 FPS for an expanded local Scout, and cross-fades frames in the UI. It does not change Scout research, comparison, persistence replay, or Closer output.
-
-The standalone local smoke viewer can run the default Google-search route, a direct two-page route, or a configured multi-page route. These tests demonstrate browser movement between public sites without adding navigation authority to the public API.
+AgentCore deployment uses the public repository as build input from a trusted checkout. AgentCore does not clone GitHub or receive repository credentials. The official CLI remotely builds a Linux ARM64 container from a gitignored staging context containing only the committed Dockerfile and required Scout sources, while account IDs, model IDs, role ARNs, bucket names, endpoints, and deployment state remain untracked.
 
 ## StraitsX lessons relevant to Scouts
 
@@ -61,7 +57,6 @@ The repository is public. Real secrets and private keys must never be committed.
 ## Remaining external inputs
 
 - AWS account, region access, AgentCore resources, and an enabled Bedrock model.
-- A locally installed Ollama model if the team chooses the real AWS-free extraction profile; the fixture profile and browser smoke test do not need a model.
 - The production UI repository or integration branch.
 - Closer's merchant-payment eligibility rules, if it exposes any beyond accepting the selected URL.
-- Two or three merchants verified to work reliably for the live demo, while the product remains merchant-agnostic.
+- Two or three Singapore or Singapore-shipping merchants verified to work reliably from AgentCore Browser on the judging network, while the product remains merchant-agnostic.

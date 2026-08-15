@@ -5,6 +5,49 @@ info:
 servers:
   - url: http://localhost:3001
 paths:
+  /v1/runs/search:
+    post:
+      summary: Start website-integrated Scout discovery
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebsiteSearchRequest" }
+      responses: { "202": { description: Run accepted for background execution } }
+  /v1/runs/{activityId}/pause:
+    post:
+      summary: Pause website-integrated Scout discovery
+      parameters: [{ $ref: "#/components/parameters/ActivityId" }]
+      responses: { "202": { description: Pause accepted } }
+  /v1/runs/{activityId}/resume:
+    post:
+      summary: Resume website-integrated Scout discovery
+      parameters: [{ $ref: "#/components/parameters/ActivityId" }]
+      responses: { "202": { description: Resume accepted } }
+  /v1/runs/{activityId}/cancel:
+    post:
+      summary: Cancel website-integrated Scout discovery
+      parameters: [{ $ref: "#/components/parameters/ActivityId" }]
+      responses: { "202": { description: Cancellation accepted } }
+  /v1/runs/{activityId}/reject:
+    post:
+      summary: Reject one selected listing
+      parameters: [{ $ref: "#/components/parameters/ActivityId" }]
+      responses: { "202": { description: Rejection accepted } }
+  /v1/live-view/connection:
+    post:
+      summary: Exchange an opaque viewer capability for a fresh signed AgentCore connection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [capability]
+              properties: { capability: { type: string, minLength: 32 } }
+      responses:
+        "200": { description: Short-lived signed connection }
+        "410": { description: Capability expired or Scout session ended }
   /v1/scout-runs:
     post:
       summary: Start an idempotent Scout Activity
@@ -85,45 +128,6 @@ paths:
           required: true
           schema: { type: string }
       responses: { "200": { description: Image }, "302": { description: Presigned S3 image } }
-  /v1/scouts/{scoutId}/frames:
-    get:
-      summary: Upgrade to the local Scout JPEG frame stream
-      description: >-
-        WebSocket-only endpoint. Request the happy.scout-jpeg.v1 subprotocol. Text messages
-        contain status metadata and binary messages contain raw JPEG bytes. Frames are
-        ephemeral and are not part of Activity event replay.
-      x-websocket: true
-      x-websocket-subprotocol: happy.scout-jpeg.v1
-      parameters:
-        - $ref: "#/components/parameters/ScoutId"
-        - in: query
-          name: view
-          schema: { type: string, enum: [collapsed, expanded], default: collapsed }
-      responses:
-        "101": { description: WebSocket upgraded }
-        "404": { description: Scout not found }
-        "503": { description: Binary frame streaming is unavailable in this runtime }
-  /v1/scouts/{scoutId}/state:
-    get:
-      summary: Return a Scout's current structured state
-      parameters:
-        - $ref: "#/components/parameters/ScoutId"
-      responses: { "200": { description: Scout state and item context } }
-  /v1/scouts/{scoutId}/live:
-    get:
-      summary: Render the local low-rate screenshot viewer
-      parameters:
-        - $ref: "#/components/parameters/ScoutId"
-      responses: { "200": { description: Local Scout viewer HTML }, "404": { description: Scout not found } }
-  /v1/scouts/{scoutId}/live-view-url:
-    post:
-      summary: Generate a provider-specific expanded Scout-view URL
-      parameters:
-        - in: path
-          name: scoutId
-          required: true
-          schema: { type: string }
-      responses: { "200": { description: Short-lived Live View URL }, "503": { description: Unavailable } }
 components:
   parameters:
     ActivityId:
@@ -131,12 +135,48 @@ components:
       name: activityId
       required: true
       schema: { type: string }
-    ScoutId:
-      in: path
-      name: scoutId
-      required: true
-      schema: { type: string }
   schemas:
+    WebsiteSearchRequest:
+      type: object
+      required: [activityId, items, callback, scouts]
+      properties:
+        activityId: { type: string }
+        items:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items:
+            type: object
+            required: [id, name, short, spec, budget, hueIndex]
+            properties:
+              id: { type: string }
+              name: { type: string }
+              short: { type: string }
+              spec: { type: string }
+              budget: { type: string }
+              hueIndex: { type: integer, minimum: 0, maximum: 5 }
+              category: { type: string }
+        clarifications: { type: array, items: { type: object } }
+        callback:
+          type: object
+          required: [url]
+          properties:
+            url: { type: string, format: uri }
+            token: { type: string }
+        scouts:
+          type: object
+          required: [perItem, maxConcurrentItems, listingsPerScout, strategies]
+          properties:
+            perItem: { const: 2 }
+            maxConcurrentItems: { type: integer, maximum: 5 }
+            listingsPerScout: { type: integer, minimum: 1, maximum: 3 }
+            strategies:
+              type: array
+              prefixItems:
+                - { const: large-marketplaces }
+                - { const: specialist-independent }
+              minItems: 2
+              maxItems: 2
     StartScoutRunRequest:
       type: object
       required: [activityId, items]

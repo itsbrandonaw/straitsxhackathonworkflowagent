@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 const SCANNER_VERSION = "happy-secret-scan/1.0.0";
 const tracked = execFileSync("git", ["ls-files", "-co", "--exclude-standard", "-z"], { encoding: "utf8" })
@@ -16,6 +16,9 @@ const patterns = [
 
 const findings = [];
 for (const file of tracked) {
+  // `git ls-files` includes tracked paths deleted in the working tree until the
+  // deletion is staged. A rollback must still be scannable before staging.
+  if (!existsSync(file)) continue;
   const extension = file.slice(file.lastIndexOf(".")).toLowerCase();
   if (binaryExtensions.has(extension)) continue;
   const content = readFileSync(file, "utf8");

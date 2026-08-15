@@ -34,7 +34,9 @@ function candidate(id: string, overrides: Partial<Candidate> = {}): Candidate {
     variant: "16GB",
     quantity: 1,
     priceSGD: 50,
+    priceMinor: 5_000,
     totalPriceSGD: 50,
+    amountMinor: 5_000,
     currency: "SGD",
     inStock: true,
     shipsToCountry: true,
@@ -68,10 +70,6 @@ describe("URL safety", () => {
     expect(() => assertSafePublicUrl("file:///etc/passwd")).toThrow(/scheme/i);
     expect(canonicalizeListingUrl("HTTPS://Example.com/item/?utm_source=test&sku=1#reviews"))
       .toBe("https://example.com/item?sku=1");
-    expect(canonicalizeListingUrl("https://www.amazon.sg/Keyboard/dp/B0DBZGH5XM/ref=sr_1_1?keywords=keyboard&sr=8-1"))
-      .toBe("https://www.amazon.sg/dp/B0DBZGH5XM");
-    expect(canonicalizeListingUrl("https://shopee.sg/Keyboard-i.12345.67890?sp_atk=tracking"))
-      .toBe("https://shopee.sg/product/12345/67890");
   });
 });
 

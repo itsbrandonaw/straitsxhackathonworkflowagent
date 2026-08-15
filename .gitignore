@@ -4,6 +4,10 @@ coverage/
 .turbo/
 .vite/
 cdk.out/
+agentcore/aws-targets.json
+agentcore/.env.local
+agentcore/.cli/
+.agentcore-project/
 *.tsbuildinfo
 
 .env
@@ -21,5 +25,4 @@ screenshots/
 *.sqlite3
 *.db
 *.log
-.happy-data/
 .DS_Store

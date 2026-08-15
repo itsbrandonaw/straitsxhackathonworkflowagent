@@ -1,0 +1,31 @@
+{
+  "name": "HappyScouts",
+  "version": 1,
+  "tags": {
+    "agentcore:created-by": "agentcore-cli",
+    "agentcore:project-name": "HappyScouts",
+    "Project": "HappyScouts"
+  },
+  "runtimes": [
+    {
+      "name": "HappyScoutsRuntime",
+      "build": "Container",
+      "entrypoint": "apps/agentcore/src/server.ts",
+      "codeLocation": ".",
+      "buildContextPath": ".",
+      "runtimeVersion": "NODE_22",
+      "networkMode": "PUBLIC",
+      "protocol": "HTTP",
+      "instrumentation": {
+        "enableOtel": false
+      }
+    }
+  ],
+  "memories": [],
+  "credentials": [],
+  "payments": [],
+  "evaluators": [],
+  "onlineEvalConfigs": [],
+  "agentCoreGateways": [],
+  "policyEngines": []
+}

@@ -31,10 +31,11 @@ export class BedrockBrowserScoutDriver implements ScoutDriver {
 
   async run(context: ScoutRunContext): Promise<void> {
     const session = await this.options.browsers.start(context.scout.id);
-    await context.callbacks.onBrowserSession(session.sessionId);
-    const browser = await chromium.connectOverCDP(session.automationUrl);
+    let browser: Awaited<ReturnType<typeof chromium.connectOverCDP>> | undefined;
     let heartbeat: ReturnType<typeof setInterval> | undefined;
     try {
+      await context.callbacks.onBrowserSession(session.sessionId);
+      browser = await chromium.connectOverCDP(session.automationUrl);
       const browserContext = browser.contexts()[0] ?? await browser.newContext({ locale: context.item.locale });
       const page = browserContext.pages()[0] ?? await browserContext.newPage();
       heartbeat = setInterval(() => {
@@ -67,14 +68,15 @@ export class BedrockBrowserScoutDriver implements ScoutDriver {
         await context.callbacks.onStage("analyzing", "Extracting listing evidence");
         const pageText = (await page.locator("body").innerText({ timeout: 10_000 })).slice(0, 20_000);
         const candidate = await this.extractCandidate(context, url, pageText);
-        await context.callbacks.onStage("gathering", "Saving validated candidate");
         await context.callbacks.onCandidate(candidate);
+        await context.callbacks.onStage("gathering", "Saved validated candidate");
       }
       if (safeLinks.length === 0) throw new Error("No safe merchant listing links were discovered");
     } finally {
       clearInterval(heartbeat);
-      await browser.close().catch(() => undefined);
+      await browser?.close().catch(() => undefined);
       await this.options.browsers.stop(session.sessionId).catch(() => undefined);
+      await context.callbacks.onBrowserSessionEnded().catch(() => undefined);
     }
   }
 
@@ -117,8 +119,11 @@ export class BedrockBrowserScoutDriver implements ScoutDriver {
       canonicalUrl,
       quantity: context.item.quantity,
       priceSGD: price,
+      priceMinor: Math.round(price * 100),
       ...(shipping === undefined ? {} : { shippingSGD: shipping }),
+      ...(shipping === undefined ? {} : { shippingMinor: Math.round(shipping * 100) }),
       totalPriceSGD: price + (shipping ?? 0),
+      amountMinor: Math.round((price + (shipping ?? 0)) * 100),
       currency: "SGD",
       source: context.scout.strategy,
       discoveredAt: new Date().toISOString(),

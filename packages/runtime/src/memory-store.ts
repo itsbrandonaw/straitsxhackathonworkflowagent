@@ -40,11 +40,4 @@ export class InMemoryActivityStore implements ActivityStore {
   async eventsAfter(activityId: string, sequence: number): Promise<ActivityEvent[]> {
     return clone((this.events.get(activityId) ?? []).filter((event) => event.sequence > sequence));
   }
-
-  async findByScoutId(scoutId: string): Promise<ActivityRecord | undefined> {
-    for (const activity of this.activities.values()) {
-      if (activity.items.some((item) => item.scouts.some((scout) => scout.id === scoutId))) return clone(activity);
-    }
-    return undefined;
-  }
 }

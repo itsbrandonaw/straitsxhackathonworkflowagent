@@ -8,7 +8,6 @@ export default defineConfig({
     alias: {
       "@happy/contracts": fromRoot("./packages/contracts/src/index.ts"),
       "@happy/core": fromRoot("./packages/core/src/index.ts"),
-      "@happy/local": fromRoot("./packages/local/src/index.ts"),
       "@happy/runtime": fromRoot("./packages/runtime/src/index.ts")
     }
   },
