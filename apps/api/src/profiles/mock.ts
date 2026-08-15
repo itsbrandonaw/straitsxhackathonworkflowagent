@@ -13,7 +13,9 @@ export function createMockDependencies(): AppDependencies {
   const events = new EventHub();
   return {
     events,
-    info: { mode: "mock", browser: "synthetic", extraction: "fixture", persistence: "memory" },
+    info: {
+      mode: "mock", browser: "synthetic", extraction: "fixture", persistence: "memory", imagery: "snapshots"
+    },
     coordinator: new ScoutCoordinator({
       store: new InMemoryActivityStore(),
       publisher: events,

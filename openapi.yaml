@@ -85,6 +85,24 @@ paths:
           required: true
           schema: { type: string }
       responses: { "200": { description: Image }, "302": { description: Presigned S3 image } }
+  /v1/scouts/{scoutId}/frames:
+    get:
+      summary: Upgrade to the local Scout JPEG frame stream
+      description: >-
+        WebSocket-only endpoint. Request the happy.scout-jpeg.v1 subprotocol. Text messages
+        contain status metadata and binary messages contain raw JPEG bytes. Frames are
+        ephemeral and are not part of Activity event replay.
+      x-websocket: true
+      x-websocket-subprotocol: happy.scout-jpeg.v1
+      parameters:
+        - $ref: "#/components/parameters/ScoutId"
+        - in: query
+          name: view
+          schema: { type: string, enum: [collapsed, expanded], default: collapsed }
+      responses:
+        "101": { description: WebSocket upgraded }
+        "404": { description: Scout not found }
+        "503": { description: Binary frame streaming is unavailable in this runtime }
   /v1/scouts/{scoutId}/state:
     get:
       summary: Return a Scout's current structured state

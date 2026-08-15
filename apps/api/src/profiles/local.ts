@@ -11,6 +11,7 @@ import {
 import {
   BrowserScoutDriver,
   EventHub,
+  InMemoryLiveFrameHub,
   ResilientScoutDriver,
   ScoutCoordinator,
   type CandidateExtractor
@@ -20,6 +21,12 @@ import type { AppDependencies } from "../dependencies.js";
 const integer = (value: string | undefined, fallback: number, name: string): number => {
   const parsed = Number(value ?? fallback);
   if (!Number.isSafeInteger(parsed)) throw new Error(`${name} must be an integer`);
+  return parsed;
+};
+
+const positiveNumber = (value: string | undefined, fallback: number, name: string): number => {
+  const parsed = Number(value ?? fallback);
+  if (!Number.isFinite(parsed) || parsed <= 0) throw new Error(`${name} must be greater than zero`);
   return parsed;
 };
 
@@ -47,9 +54,24 @@ export async function createLocalAgentDependencies(environment: NodeJS.ProcessEn
   const dataDir = resolve(environment.LOCAL_DATA_DIR ?? ".happy-data");
   const snapshots = new FileSnapshotStore(dataDir);
   await snapshots.cleanup();
+  const jpegQuality = integer(environment.LIVE_FRAME_JPEG_QUALITY, 60, "LIVE_FRAME_JPEG_QUALITY");
+  if (jpegQuality < 1 || jpegQuality > 100) throw new Error("LIVE_FRAME_JPEG_QUALITY must be between 1 and 100");
   const sessions = new LocalPlaywrightBrowserSessions({
-    headless: environment.LOCAL_BROWSER_HEADLESS !== "false"
+    headless: environment.LOCAL_BROWSER_HEADLESS !== "false",
+    jpegQuality
   });
+  const frames = new InMemoryLiveFrameHub({
+    collapsedFps: positiveNumber(environment.LIVE_FRAME_COLLAPSED_FPS, 0.5, "LIVE_FRAME_COLLAPSED_FPS"),
+    expandedFps: positiveNumber(environment.LIVE_FRAME_EXPANDED_FPS, 3, "LIVE_FRAME_EXPANDED_FPS"),
+    maxScoutFps: positiveNumber(environment.LIVE_FRAME_MAX_SCOUT_FPS, 3, "LIVE_FRAME_MAX_SCOUT_FPS"),
+    globalFpsBudget: positiveNumber(environment.LIVE_FRAME_GLOBAL_FPS_BUDGET, 12, "LIVE_FRAME_GLOBAL_FPS_BUDGET")
+  });
+  const frameMaxBufferedBytes = integer(
+    environment.LIVE_FRAME_MAX_BUFFERED_BYTES,
+    1_048_576,
+    "LIVE_FRAME_MAX_BUFFERED_BYTES"
+  );
+  if (frameMaxBufferedBytes < 65_536) throw new Error("LIVE_FRAME_MAX_BUFFERED_BYTES must be at least 65536");
   const events = new EventHub();
   const driver = new BrowserScoutDriver({
     sessions,
@@ -63,16 +85,23 @@ export async function createLocalAgentDependencies(environment: NodeJS.ProcessEn
       mode: "local",
       browser: "playwright",
       extraction: extractionMode,
-      persistence: "local_disk"
+      persistence: "local_disk",
+      imagery: "binary_websocket"
     },
+    frames,
+    frameMaxBufferedBytes,
     coordinator: new ScoutCoordinator({
       store: new LocalDiskActivityStore(dataDir),
       publisher: events,
       driver: new ResilientScoutDriver(driver, { backupAttempts: 2, timeoutMs: 360_000 }),
       snapshots,
       liveView: new LocalLiveViewProvider(environment.PUBLIC_API_URL ?? "http://localhost:3001"),
+      liveFrames: frames,
       maxConcurrentItems
     }),
-    shutdown: () => sessions.close()
+    shutdown: async () => {
+      frames.close();
+      await sessions.close();
+    }
   };
 }

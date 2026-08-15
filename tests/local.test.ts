@@ -159,6 +159,8 @@ describe("portable browser Scout", () => {
   it("runs the real pipeline through browser, search, and extraction ports", async () => {
     const stages: string[] = [];
     const candidates: Candidate[] = [];
+    const durableScreenshots: Uint8Array[] = [];
+    const liveFrames: Uint8Array[] = [];
     const page: BrowserPage = {
       goto: vi.fn(async () => undefined),
       links: vi.fn(async () => []),
@@ -190,7 +192,9 @@ describe("portable browser Scout", () => {
         onStage: async (stage) => { stages.push(stage); },
         onBrowserSession: async () => undefined,
         onCandidate: async (candidate) => { candidates.push(candidate); return true; },
-        onScreenshot: async () => undefined
+        onScreenshot: async (bytes) => { durableScreenshots.push(bytes); },
+        requestedLiveFrameFps: () => 1,
+        onLiveFrame: async (bytes) => { liveFrames.push(bytes); }
       }
     };
     await driver.run(context);
@@ -198,6 +202,8 @@ describe("portable browser Scout", () => {
       "discovering", "analyzing", "gathering", "discovering", "analyzing", "gathering"
     ]);
     expect(candidates).toHaveLength(2);
+    expect(durableScreenshots.length).toBeGreaterThan(0);
+    expect(liveFrames.length).toBeGreaterThan(0);
     expect(sessions.stop).toHaveBeenCalledOnce();
   });
 
@@ -265,7 +271,8 @@ describe("local runtime profile", () => {
       PUBLIC_API_URL: "http://localhost:3001"
     });
     expect(dependencies.info).toEqual({
-      mode: "local", browser: "playwright", extraction: "fixture", persistence: "local_disk"
+      mode: "local", browser: "playwright", extraction: "fixture", persistence: "local_disk",
+      imagery: "binary_websocket"
     });
     await dependencies.shutdown?.();
     await expect(createLocalAgentDependencies({

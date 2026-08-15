@@ -1,11 +1,13 @@
 import type { RuntimeInfo } from "@happy/runtime";
-import type { EventHub, ScoutCoordinator } from "@happy/runtime";
+import type { EventHub, LiveFrameChannel, ScoutCoordinator } from "@happy/runtime";
 import { createMockDependencies } from "./profiles/mock.js";
 import { createLocalAgentDependencies } from "./profiles/local.js";
 
 export type AppDependencies = {
   coordinator: ScoutCoordinator;
   events: EventHub;
+  frames?: LiveFrameChannel;
+  frameMaxBufferedBytes?: number;
   info: RuntimeInfo;
   shutdown?: () => Promise<void>;
 };

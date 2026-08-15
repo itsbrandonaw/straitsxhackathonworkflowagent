@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { ActivityEvent, ActivityRecord, StartScoutRunRequest } from "@happy/contracts";
+import { ScoutFrameStream } from "./ScoutFrameStream.js";
 import "./styles.css";
 
 const apiUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
@@ -14,6 +15,7 @@ type Health = {
   browser: "synthetic" | "playwright" | "agentcore";
   extraction: "fixture" | "ollama" | "bedrock";
   persistence: "memory" | "local_disk" | "dynamodb";
+  imagery: "snapshots" | "binary_websocket" | "agentcore_live_view";
 };
 
 function demoRequest(activityId: string, count = demoItems.length): StartScoutRunRequest {
@@ -194,10 +196,14 @@ function App() {
       </div>}
       <section className="grid">
         {scouts.map((scout) => <article className={`tile tile-${scout.stage}`} key={scout.id}>
-          <div className="browserBar"><span />{scout.snapshotKey ? "live snapshot" : "waiting"}</div>
-          {scout.snapshotKey
-            ? <img src={`${apiUrl}/v1/scouts/${scout.id}/snapshot?v=${encodeURIComponent(scout.snapshotKey)}`} alt={`${scout.id} browser`} />
-            : <div className="placeholder">Queued for a browser slot</div>}
+          <div className="browserBar"><span />{scout.snapshotKey ? "browser feed" : "waiting"}</div>
+          <ScoutFrameStream
+            apiUrl={apiUrl}
+            imagery={health?.imagery ?? "snapshots"}
+            scoutId={scout.id}
+            stage={scout.stage}
+            snapshotKey={scout.snapshotKey}
+          />
           <footer><div><strong>{scout.itemName}</strong><small>{scout.strategy}</small><small>{scout.detail}</small></div><div className="tileActions"><span>{scout.stage}</span>{health?.mode === "local" && <button className="small secondary" onClick={() => void openLiveView(scout.id)}>Expand</button>}</div></footer>
         </article>)}
       </section>

@@ -16,6 +16,8 @@
 - Install pinned Chromium: `pnpm browser:install`
 - Google-to-Shopee visual smoke: `pnpm smoke:local-browser`
 - Custom visual destination: set `SMOKE_TARGET_SITE`, `SMOKE_TARGET_LABEL`, and `SMOKE_TARGET_URL` before `pnpm smoke:local-browser`.
+- Direct two-page visual route: set `LOCAL_SMOKE_DIRECT_ROUTE=true`, `SMOKE_START_LABEL`, `SMOKE_START_URL`, `SMOKE_TARGET_LABEL`, and `SMOKE_TARGET_URL`.
+- Multi-page visual route: set pipe-separated `SMOKE_ROUTE_LABELS` and `SMOKE_ROUTE_URLS`; tune the dwell time with `LOCAL_SMOKE_ROUTE_STEP_MS`.
 - Typecheck: `pnpm typecheck`
 - Tests: `pnpm test`
 - Build: `pnpm build`
@@ -35,6 +37,8 @@
 - `Gathering -> Discovering` is the intentional candidate loop. Do not fabricate progress stages.
 - Browser imagery is non-fatal observability.
 - Keep action screenshots capped at one frame per second per Scout; the real browser driver supplies a five-second idle heartbeat.
+- Keep ephemeral live JPEGs separate from durable snapshots and Activity replay. Local visible tiles use `happy.scout-jpeg.v1`; default demand is 0.5 FPS collapsed, 3 FPS expanded, and 12 FPS globally.
+- Drop stale frames under WebSocket backpressure and stop continuous capture when no visible viewer requests it.
 - WebSocket consumers must reconnect from their last Activity sequence and coalesce state refreshes rather than polling once per event.
 - Closer receives only `{ activityId, selections: [{ itemId, url }] }`.
 - `LOCAL_EXTRACTION_MODE=fixture` combines real browsing with fabricated candidate fields. Keep it visibly labelled, disable it in production, and never treat it as product-evidence validation.

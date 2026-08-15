@@ -14,6 +14,7 @@ import { assertScoutTransition, candidateDeduplicationKey, compareCandidates } f
 import type {
   ActivityStore,
   EventPublisher,
+  LiveFramePublisher,
   LiveViewProvider,
   ScoutDriver,
   SnapshotAccess,
@@ -38,6 +39,7 @@ export class ScoutCoordinator {
     driver: ScoutDriver;
     snapshots: SnapshotStore;
     liveView: LiveViewProvider;
+    liveFrames?: LiveFramePublisher;
     maxConcurrentItems?: number;
   }) {}
 
@@ -349,7 +351,18 @@ export class ScoutCoordinator {
             await this.transitionScout(activityId, itemId, scoutId, stage, detail);
           },
           onCandidate: async (candidate) => this.acceptCandidate(activityId, itemId, scoutId, candidate),
-          onScreenshot: async (bytes, contentType) => this.saveSnapshot(activityId, itemId, scoutId, bytes, contentType)
+          onScreenshot: async (bytes, contentType) => this.saveSnapshot(activityId, itemId, scoutId, bytes, contentType),
+          requestedLiveFrameFps: () => this.dependencies.liveFrames?.requestedFps(scoutId) ?? 0,
+          onLiveFrame: async (bytes, contentType) => {
+            await this.dependencies.liveFrames?.publish({
+              activityId,
+              itemId,
+              scoutId,
+              capturedAt: new Date().toISOString(),
+              contentType,
+              bytes
+            });
+          }
         }
       });
     } catch (error) {
@@ -365,6 +378,7 @@ export class ScoutCoordinator {
       });
     } finally {
       this.lastSnapshotAt.delete(`${activityId}:${scoutId}`);
+      this.dependencies.liveFrames?.complete(scoutId);
     }
   }
 

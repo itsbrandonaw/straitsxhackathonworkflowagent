@@ -69,8 +69,9 @@ Closer does not receive browser sessions, scoring internals, prompts, rejected a
 | Comparator | Deterministic TypeScript code that filters and ranks the shared candidate pool. |
 | Selection | The highest-ranked eligible candidate for an item. |
 | Event | A versioned, sequenced record of real workflow progress. |
-| Snapshot | The latest lightweight image from a Scout browser. |
-| Live View | A temporary interactive view into an active managed browser session. |
+| Milestone snapshot | A durable, replayable image captured after meaningful browser activity or an idle heartbeat. |
+| Live frame | An ephemeral JPEG sent only while a local Scout has a visible viewer. It is never written to Activity replay. |
+| Live View | A temporary interactive view into an active AWS-managed browser session. |
 
 ## How the workflow works
 
@@ -235,7 +236,7 @@ When a user rejects a selected candidate:
 
 ## Observability
 
-Progress events and browser imagery are deliberately separate. A screenshot or Live View failure must not terminate a Scout.
+Progress events and browser imagery are deliberately separate. A screenshot, live-frame, or Live View failure must not terminate a Scout.
 
 ### Events
 
@@ -258,7 +259,7 @@ type ActivityEvent<T> = {
 
 Sequence numbers are scoped to an Activity. WebSocket clients reconnect with their last observed sequence and receive missed events before new live events.
 
-### Snapshots
+### Durable milestone snapshots
 
 - Captured after meaningful browser actions.
 - Capped at one frame per second per Scout.
@@ -267,13 +268,40 @@ Sequence numbers are scoped to an Activity. WebSocket clients reconnect with the
 - AWS snapshots are encrypted in S3 and expire after one day.
 - Persistent state stores object keys, never expired presigned URLs.
 
+Milestone snapshots answer “what was the last meaningful browser state?” and provide a stable fallback after an API restart. They are deliberately not captured several times per second because each one produces a stored object, an Activity mutation, and a replayable `scout.snapshot_ready` event.
+
+### Ephemeral local live frames
+
+In local mode, visible Scout tiles subscribe to a separate per-Scout WebSocket. Playwright captures one JPEG and the in-memory broker broadcasts it to every viewer of that Scout. These bytes are never written to `.happy-data`, emitted as Activity events, or sent to Closer.
+
+Default demand policy:
+
+| Viewer state | Requested rate | Result |
+|---|---:|---|
+| No visible viewer | 0 FPS | No continuous live capture; durable milestones continue. |
+| Visible collapsed tile | 0.5 FPS | Low-cost overview across up to ten Scouts. |
+| Expanded local viewer | 3 FPS | Smoother focused feed. |
+| Hidden tab or off-screen tile | 0 FPS | Last successful image remains visible. |
+| Completed Scout | 0 FPS | Stream closes and the final image remains visible. |
+
+The server enforces a per-Scout cap of 3 FPS and a default global budget of 12 FPS. When demand exceeds that budget it allocates rates fairly. A slow connection drops stale frames instead of building a queue; after repeated backpressure it closes and the UI reconnects with exponential backoff. The viewer overlaps two image layers with a 200 ms cross-fade, making a low-frame-rate feed easier to follow without presenting it as video.
+
+The frame endpoint is:
+
+```text
+GET WS /v1/scouts/{scoutId}/frames?view=collapsed|expanded
+Sec-WebSocket-Protocol: happy.scout-jpeg.v1
+```
+
+The first text message reports `ready` and the server-negotiated FPS. Subsequent binary messages are raw JPEG bytes. `rate_changed`, `completed`, and `error` are text messages. Truthful stage movement still comes from `/v1/events`; frame messages never replace workflow events.
+
 ### Live View
 
-The UI should use lightweight snapshots for all Scout tiles. It should request full Live View only when a user expands one Scout.
+The AWS UI should use lightweight S3 milestone snapshots for Scout tiles and request full Live View only when a user expands one Scout. The local UI uses the binary JPEG stream for both collapsed and expanded views.
 
 In AWS mode, the backend creates a five-minute presigned AgentCore Live View WebSocket URL. It is temporary and must never be committed or logged. The application does not proxy the video stream.
 
-Mock mode has no real browser session, so `POST /v1/scouts/{scoutId}/live-view-url` returns `503 live_view_unavailable`. Local mode returns a temporary URL for the built-in snapshot viewer. The viewer refreshes the latest screenshot and structured Scout state; it is observability, not interactive remote browser control.
+Mock mode has no real browser session, so `POST /v1/scouts/{scoutId}/live-view-url` returns `503 live_view_unavailable`. Local mode returns a temporary URL for the built-in cross-fading JPEG viewer. It is read-only observability, not interactive remote browser control.
 
 ## Runtime modes
 
@@ -282,9 +310,10 @@ Mock mode has no real browser session, so `POST /v1/scouts/{scoutId}/live-view-u
 | Browser | Synthetic snapshots | Local Playwright Chromium | AgentCore Browser + Playwright/CDP |
 | Extraction | Deterministic fixtures | Ollama; fixture opt-in for browser testing | Amazon Bedrock |
 | State | Memory | Atomic local JSON + event files | DynamoDB |
-| Screenshots | Memory | Gitignored local filesystem | Encrypted S3 |
+| Durable screenshots | Memory | Gitignored local filesystem | Encrypted S3 |
+| Tile imagery | Synthetic snapshot | Demand-aware binary JPEG WebSocket | S3 milestone snapshot |
 | Events | Fastify WebSocket | Fastify WebSocket | API Gateway WebSocket publisher |
-| Expanded view | Unavailable | Built-in snapshot viewer; optional headed Chromium | AgentCore Live View |
+| Expanded view | Unavailable | Built-in 3 FPS cross-fading viewer; optional headed Chromium | Direct AgentCore Live View |
 | Credentials | None | None | AWS credentials and model access |
 | Command | `pnpm dev:mock` | `pnpm dev:local-agent` | `apps/agentcore` deployment path |
 
@@ -352,7 +381,7 @@ SMOKE_PRODUCT_QUERY="wireless earbuds" pnpm smoke:local-browser
 LOCAL_SMOKE_HOLD_MS=120000 pnpm smoke:local-browser
 ```
 
-Dynamic merchant pages receive a five-second render window and are recaptured every two seconds. Increase the initial window when testing a slow site with `LOCAL_SMOKE_TARGET_SETTLE_MS=10000`.
+Dynamic merchant pages receive a five-second render window and are recaptured about every 400 ms by default. The viewer fetches only when a new frame sequence exists and cross-fades between two image layers. Increase the initial window when testing a slow site with `LOCAL_SMOKE_TARGET_SETTLE_MS=10000`, or lower capture load with `LOCAL_SMOKE_FRAME_INTERVAL_MS=1000`.
 
 The smoke destination can also be changed without editing code:
 
@@ -361,6 +390,28 @@ SMOKE_PRODUCT_QUERY="National University of Singapore" \
 SMOKE_TARGET_SITE=nus.edu.sg \
 SMOKE_TARGET_LABEL=NUS \
 SMOKE_TARGET_URL=https://www.nus.edu.sg/ \
+pnpm smoke:local-browser
+```
+
+To test a direct transition between two public pages without the intermediate Google search, provide both endpoints and enable direct-route mode:
+
+```bash
+LOCAL_SMOKE_DIRECT_ROUTE=true \
+SMOKE_START_LABEL="McDonald's Singapore" \
+SMOKE_START_URL=https://www.mcdonalds.com.sg/ \
+SMOKE_TARGET_LABEL=NUS \
+SMOKE_TARGET_URL=https://www.nus.edu.sg/ \
+pnpm smoke:local-browser
+```
+
+The public-URL guard still applies to both endpoints. A CAPTCHA or automated-traffic page is displayed and labelled; the smoke test never attempts to bypass it.
+
+For three or more pages, use pipe-separated route labels and URLs. Each page is held for `LOCAL_SMOKE_ROUTE_STEP_MS` before navigation continues:
+
+```bash
+SMOKE_ROUTE_LABELS='NUS|NTU|SMU' \
+SMOKE_ROUTE_URLS='https://www.comp.nus.edu.sg/|https://www.ntu.edu.sg/|https://www.smu.edu.sg/' \
+LOCAL_SMOKE_ROUTE_STEP_MS=5000 \
 pnpm smoke:local-browser
 ```
 
@@ -495,9 +546,10 @@ After reconnecting, replace `0` with the last sequence the client processed. The
 | `POST` | `/v1/scout-runs/{activityId}/confirm` | Confirm selected item IDs. |
 | `GET` | `/v1/scout-runs/{activityId}/closer-handoff` | Retrieve confirmed URLs. |
 | `GET` | `/v1/scouts/{scoutId}/snapshot` | Return or redirect to the latest snapshot. |
+| `GET WS` | `/v1/scouts/{scoutId}/frames?view=collapsed\|expanded` | Stream ephemeral local JPEG frames using `happy.scout-jpeg.v1`. |
 | `GET` | `/v1/scouts/{scoutId}/state` | Return the Scout, item name, and current structured state. |
 | `POST` | `/v1/scouts/{scoutId}/live-view-url` | Generate a short-lived real-browser view when supported. |
-| `GET` | `/v1/scouts/{scoutId}/live` | Render the local snapshot viewer returned by local Live View. |
+| `GET` | `/v1/scouts/{scoutId}/live` | Render the local cross-fading frame viewer returned by local Live View. |
 | `GET WS` | `/v1/events` | Replay and stream Activity events. |
 
 ## Testing
@@ -615,7 +667,8 @@ flowchart LR
   COORD --> MODEL["Ollama structured extraction"]
   COORD --> CMP["Existing deterministic Comparator"]
   COORD --> STATE["Atomic local JSON and event files"]
-  LPW --> SHOTS["Local screenshot store"]
+  LPW --> SHOTS["Durable milestone store"]
+  LPW --> FRAMES["Ephemeral LiveFrameHub"]
 ```
 
 The implemented zero-cloud demo stack is:
@@ -626,7 +679,7 @@ The implemented zero-cloud demo stack is:
 - **State:** atomic local JSON files with optimistic versions and 24-hour event replay.
 - **Snapshots:** local filesystem with opaque hashed paths, one-day expiry, and per-Scout retention.
 - **Events:** the existing Fastify WebSocket stream.
-- **Visualization:** screenshot tiles plus an optional headed Chromium window for one expanded Scout.
+- **Visualization:** demand-aware binary JPEG streams with cross-fading tiles and a built-in expanded viewer.
 
 Playwright can launch a local Chromium browser, navigate pages, and return screenshot buffers without a managed browser provider. Ollama exposes a local chat API and supports JSON-schema structured outputs, which fits the repository's existing Zod validation boundary.
 
@@ -639,6 +692,7 @@ AWS services are behind interfaces in `@happy/runtime`:
 - `SnapshotStore`
 - `EventPublisher`
 - `LiveViewProvider`
+- `LiveFramePublisher`
 - `ActivityInvoker`
 
 Those adapters now implement the existing ports. The coordinator, state machine, deterministic comparison, event contracts, rejection logic, and Closer handoff remain shared.
@@ -651,7 +705,8 @@ Those adapters now implement the existing ports. The coordinator, state machine,
 | `OllamaCandidateExtractor` | Bedrock `Converse` | Convert untrusted page content to candidate JSON and validate it with Zod. |
 | `FileSnapshotStore` | S3 | Store short-lived images outside Git. |
 | `LocalDiskActivityStore` | DynamoDB | Atomically persist Activity state and replayable events across restarts. |
-| `LocalLiveViewProvider` | AgentCore Live View | Return the built-in snapshot and state viewer. |
+| `InMemoryLiveFrameHub` | Tile screenshot polling | Fairly allocate capture demand and broadcast latest-only JPEG frames. |
+| `LocalLiveViewProvider` | AgentCore Live View | Return the built-in cross-fading frame and state viewer. |
 
 ### Optional Browserbase path
 
@@ -669,9 +724,22 @@ MAX_CONCURRENT_ITEMS=2
 
 That would run four Scouts at a time while leaving the remaining Scout tiles visibly queued. The workflow and UI semantics remain unchanged.
 
+Live imagery can be tuned independently from workflow concurrency:
+
+```env
+LIVE_FRAME_COLLAPSED_FPS=0.5
+LIVE_FRAME_EXPANDED_FPS=3
+LIVE_FRAME_MAX_SCOUT_FPS=3
+LIVE_FRAME_GLOBAL_FPS_BUDGET=12
+LIVE_FRAME_JPEG_QUALITY=60
+LIVE_FRAME_MAX_BUFFERED_BYTES=1048576
+```
+
+These are server limits, not promises of exact frame timing. Page rendering and screenshot capture speed may produce a lower effective rate. Raising them increases CPU, JPEG encoding, memory, and network use; it does not make product discovery more accurate.
+
 ### Google and Shopee smoke test
 
-The local Playwright adapter would make it possible to test:
+The local Playwright adapter supports this test:
 
 ```text
 Chromium -> Google search -> Shopee listing -> screenshot -> structured extraction

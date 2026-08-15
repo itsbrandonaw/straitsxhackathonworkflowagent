@@ -6,7 +6,8 @@ import type {
   ScoutRecord,
   ScoutStage,
   ScoutStrategy,
-  StartScoutRunRequest
+  StartScoutRunRequest,
+  LiveFrameView
 } from "@happy/contracts";
 
 export type CreateActivityResult = { created: boolean; activity: ActivityRecord };
@@ -30,6 +31,8 @@ export type ScoutRunCallbacks = {
   /** Returns true only when the coordinator accepted this candidate into the shared item pool. */
   onCandidate(candidate: Candidate): Promise<boolean>;
   onScreenshot(bytes: Uint8Array, contentType: string): Promise<void>;
+  requestedLiveFrameFps?(): number;
+  onLiveFrame?(bytes: Uint8Array, contentType: "image/jpeg"): Promise<void>;
 };
 
 export type ScoutRunContext = {
@@ -62,6 +65,42 @@ export interface SnapshotStore {
 
 export interface LiveViewProvider {
   createUrl(scout: ScoutRecord): Promise<{ url: string; expiresAt: string }>;
+}
+
+export type { LiveFrameView } from "@happy/contracts";
+
+export type LiveFrame = {
+  activityId: string;
+  itemId: string;
+  scoutId: string;
+  capturedAt: string;
+  contentType: "image/jpeg";
+  bytes: Uint8Array;
+};
+
+export type LiveFrameStatus = "completed";
+
+export type LiveFrameListener = {
+  onFrame(frame: LiveFrame): void;
+  onRateChanged?(framesPerSecond: number): void;
+  onStatus?(status: LiveFrameStatus): void;
+};
+
+export type LiveFrameSubscription = {
+  id: string;
+  framesPerSecond(): number;
+  unsubscribe(): void;
+};
+
+export interface LiveFramePublisher {
+  requestedFps(scoutId: string): number;
+  publish(frame: LiveFrame): Promise<void>;
+  complete(scoutId: string): void;
+}
+
+export interface LiveFrameChannel extends LiveFramePublisher {
+  subscribe(scoutId: string, view: LiveFrameView, listener: LiveFrameListener): LiveFrameSubscription;
+  close(): void;
 }
 
 export interface ActivityInvoker {
@@ -116,4 +155,5 @@ export type RuntimeInfo = {
   browser: "synthetic" | "playwright" | "agentcore";
   extraction: "fixture" | "ollama" | "bedrock";
   persistence: "memory" | "local_disk" | "dynamodb";
+  imagery: "snapshots" | "binary_websocket" | "agentcore_live_view";
 };

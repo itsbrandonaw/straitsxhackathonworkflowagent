@@ -89,7 +89,11 @@ The default preset weights Price 40%, Authenticity 35%, and Reviews 25%. Other p
 
 ## Observability
 
-Progress and visual streams are independent. A Scout captures after meaningful actions at no more than one frame per second and emits an idle frame every five seconds. AWS S3 objects are encrypted, expire after one day, and use short-lived URLs. Local images use opaque hashed paths, one-day expiry, and a five-image per-Scout cap. Local expanded views refresh the latest image and structured state; AWS expanded views use direct presigned AgentCore Live View rather than proxying video.
+Progress and visual streams are independent. Durable milestone snapshots are captured after meaningful actions at no more than one frame per second, with an idle heartbeat every five seconds. AWS S3 objects are encrypted, expire after one day, and use short-lived URLs. Local milestone images use opaque hashed paths, one-day expiry, and a five-image per-Scout cap.
+
+The local runtime also exposes ephemeral JPEG frames through an in-memory `LiveFrameHub` and `GET WS /v1/scouts/{scoutId}/frames?view=collapsed|expanded`, using subprotocol `happy.scout-jpeg.v1`. Visible collapsed tiles request 0.5 FPS, the expanded viewer requests 3 FPS, and the server caps total demand at 12 FPS by default. A page is captured only once per Scout interval even with multiple viewers. Live bytes are latest-only, dropped under backpressure, removed when demand ends, and never enter disk state or Activity event replay. The UI double-buffers and cross-fades frames while truthful stage state continues through the Activity WebSocket.
+
+AWS expanded views continue to use direct presigned AgentCore Live View rather than proxying video through this channel.
 
 ## Security boundary
 

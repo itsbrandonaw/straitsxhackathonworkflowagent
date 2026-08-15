@@ -43,6 +43,10 @@ The team also needs an AWS-free fallback in case hackathon account access is not
 
 The AWS-free implementation is now additive and operational. It defaults to two concurrent items/four isolated Playwright contexts, provides a screenshot-stream viewer plus optional headed Chromium, uses Ollama for real structured extraction, and persists Activity state, replayable events, and short-lived screenshots under a gitignored local data directory. An explicitly labelled fixture extractor permits browser-only integration testing without a model and is disabled in production.
 
+A smoother-imagery enhancement from `SMOOTH_IMAGERY_IMPLEMENTATION_PLAN.md` is implemented. It separates durable milestone snapshots from ephemeral live JPEG frames, uses a server-capped per-Scout binary WebSocket, targets 0.5 FPS for collapsed tiles and 3 FPS for an expanded local Scout, and cross-fades frames in the UI. It does not change Scout research, comparison, persistence replay, or Closer output.
+
+The standalone local smoke viewer can run the default Google-search route, a direct two-page route, or a configured multi-page route. These tests demonstrate browser movement between public sites without adding navigation authority to the public API.
+
 ## StraitsX lessons relevant to Scouts
 
 - StraitsX provides a one-time card MCP in sandbox and production plus XSGD settlement rails.

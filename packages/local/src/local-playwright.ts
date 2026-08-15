@@ -7,7 +7,11 @@ import type { BrowserPage, BrowserSessionHandle, BrowserSessionProvider } from "
 type LocalHandle = BrowserSessionHandle & { context: BrowserContext };
 
 class PlaywrightPageAdapter implements BrowserPage {
-  constructor(private readonly page: Page, private readonly safety: NetworkSafety) {}
+  constructor(
+    private readonly page: Page,
+    private readonly safety: NetworkSafety,
+    private readonly jpegQuality: number
+  ) {}
 
   async goto(value: string, timeoutMs = 30_000): Promise<void> {
     const url = await this.safety.assert(value);
@@ -27,7 +31,7 @@ class PlaywrightPageAdapter implements BrowserPage {
   }
 
   async screenshot(): Promise<Uint8Array> {
-    return this.page.screenshot({ type: "jpeg", quality: 65 });
+    return this.page.screenshot({ type: "jpeg", quality: this.jpegQuality });
   }
 
   async url(): Promise<string> {
@@ -64,7 +68,12 @@ export class LocalPlaywrightBrowserSessions implements BrowserSessionProvider {
   private readonly sessions = new Map<string, LocalHandle>();
   private readonly safety = new NetworkSafety();
 
-  constructor(private readonly options: { headless?: boolean } = {}) {}
+  constructor(private readonly options: { headless?: boolean; jpegQuality?: number } = {}) {
+    const quality = options.jpegQuality ?? 60;
+    if (!Number.isInteger(quality) || quality < 1 || quality > 100) {
+      throw new Error("jpegQuality must be an integer between 1 and 100");
+    }
+  }
 
   async start(input: {
     activityId: string;
@@ -88,7 +97,11 @@ export class LocalPlaywrightBrowserSessions implements BrowserSessionProvider {
     });
     const page = await context.newPage();
     const id = `local-${input.scoutId}-${randomUUID()}`;
-    const handle: LocalHandle = { id, context, page: new PlaywrightPageAdapter(page, this.safety) };
+    const handle: LocalHandle = {
+      id,
+      context,
+      page: new PlaywrightPageAdapter(page, this.safety, this.options.jpegQuality ?? 60)
+    };
     this.sessions.set(id, handle);
     return handle;
   }
