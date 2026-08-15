@@ -4,6 +4,8 @@
 
 Deliver a TypeScript backend that accepts locked item specifications, schedules two Scouts per item with a ten-Scout cap, gathers one to three candidates per Scout, compares a shared deduplicated pool deterministically, streams progress and imagery, and emits one confirmed `{ itemId, url }` per item.
 
+The AWS-native delivery remains the primary implementation. The additive no-AWS contingency is specified separately in [`AWS_FREE_IMPLEMENTATION_PLAN.md`](./AWS_FREE_IMPLEMENTATION_PLAN.md).
+
 ## Delivery
 
 1. Establish public-repository safety, documentation, typed contracts, and local configuration.

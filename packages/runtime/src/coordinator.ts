@@ -66,14 +66,12 @@ export class ScoutCoordinator {
       }))
     };
     const created = await this.dependencies.store.create(activity);
-    if (!created.created) return created.activity;
+    if (!created.created) {
+      this.controls.set(created.activity.id, this.newControl(created.activity.status === "paused"));
+      return created.activity;
+    }
 
-    this.controls.set(activity.id, {
-      paused: false,
-      cancelled: false,
-      waiters: new Set(),
-      abort: new AbortController()
-    });
+    this.controls.set(activity.id, this.newControl());
     await this.emit(activity.id, "activity.started", { itemCount: activity.items.length });
     for (const item of activity.items) {
       await this.emit(activity.id, "item.queued", { name: item.request.name }, { itemId: item.request.itemId, attempt: item.attempt });
@@ -175,6 +173,7 @@ export class ScoutCoordinator {
       ];
       record.status = "searching";
     });
+    if (!this.controls.has(activityId)) this.controls.set(activityId, this.newControl());
     const run = this.restartItem(activityId, itemId).finally(() => this.running.delete(activityId));
     this.running.set(activityId, run);
     void run.catch(() => undefined);
@@ -204,12 +203,28 @@ export class ScoutCoordinator {
     return scout.snapshotKey ? this.dependencies.snapshots.get(scout.snapshotKey) : undefined;
   }
 
+  async scoutState(scoutId: string): Promise<{
+    activityId: string;
+    itemId: string;
+    itemName: string;
+    scout: ScoutRecord;
+  }> {
+    const { activity, scout } = await this.findScoutAcrossActivities(scoutId);
+    const item = this.findItem(activity, scout.itemId);
+    return {
+      activityId: activity.id,
+      itemId: item.request.itemId,
+      itemName: item.request.name,
+      scout
+    };
+  }
+
   async waitForIdle(activityId: string): Promise<void> {
     await this.running.get(activityId);
   }
 
   private createScout(itemId: string, suffix: string, strategy: ScoutRecord["strategy"]): ScoutRecord {
-    return { id: `scout-${itemId}-${suffix}`, itemId, strategy, stage: "queued", attempt: 1, listingsGathered: 0 };
+    return { id: `scout-${randomUUID()}-${suffix}`, itemId, strategy, stage: "queued", attempt: 1, listingsGathered: 0 };
   }
 
   private async runActivity(activityId: string): Promise<void> {
@@ -361,23 +376,25 @@ export class ScoutCoordinator {
       const mutable = this.findScout(this.findItem(record, itemId), scoutId);
       assertScoutTransition(mutable.stage, stage);
       mutable.stage = stage;
+      if (detail) mutable.detail = detail;
     });
   }
 
-  private async acceptCandidate(activityId: string, itemId: string, scoutId: string, candidate: Candidate): Promise<void> {
+  private async acceptCandidate(activityId: string, itemId: string, scoutId: string, candidate: Candidate): Promise<boolean> {
     const activity = await this.requireActivity(activityId);
     const item = this.findItem(activity, itemId);
     const key = candidateDeduplicationKey(candidate);
     const duplicate = item.candidates.some((existing) => candidateDeduplicationKey(existing) === key);
     if (duplicate) {
       await this.emit(activityId, "candidate.rejected", { candidateId: candidate.id, reason: "duplicate" }, { itemId, scoutId, attempt: item.attempt });
-      return;
+      return false;
     }
     await this.emit(activityId, "candidate.accepted", { candidateId: candidate.id, merchant: candidate.merchant }, { itemId, scoutId, attempt: item.attempt }, (record) => {
       const mutableItem = this.findItem(record, itemId);
       mutableItem.candidates.push(candidate);
       this.findScout(mutableItem, scoutId).listingsGathered += 1;
     });
+    return true;
   }
 
   private async saveSnapshot(activityId: string, itemId: string, scoutId: string, bytes: Uint8Array, contentType: string): Promise<void> {
@@ -468,6 +485,10 @@ export class ScoutCoordinator {
     return control;
   }
 
+  private newControl(paused = false): Control {
+    return { paused, cancelled: false, waiters: new Set(), abort: new AbortController() };
+  }
+
   private async requireActivity(activityId: string): Promise<ActivityRecord> {
     const activity = await this.dependencies.store.get(activityId);
     if (!activity) throw new ActivityNotFoundError(`Activity not found: ${activityId}`);
@@ -487,9 +508,12 @@ export class ScoutCoordinator {
   }
 
   private async findScoutAcrossActivities(scoutId: string): Promise<{ activity: ActivityRecord; scout: ScoutRecord }> {
-    const activityId = scoutId.match(/^scout-(.+)-[ab]$/)?.[1];
-    if (activityId) {
-      // Scout IDs contain item IDs rather than Activity IDs, so fall through to the known active controls.
+    const persisted = await this.dependencies.store.findByScoutId?.(scoutId);
+    if (persisted) {
+      for (const item of persisted.items) {
+        const scout = item.scouts.find((candidate) => candidate.id === scoutId);
+        if (scout) return { activity: persisted, scout };
+      }
     }
     for (const id of this.controls.keys()) {
       const activity = await this.dependencies.store.get(id);

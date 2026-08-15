@@ -41,6 +41,8 @@ The intended AWS-native stack is AgentCore Runtime, AgentCore Browser, Amazon Be
 
 The team also needs an AWS-free fallback in case hackathon account access is not supplied. The preferred fallback preserves the current coordinator and contracts while replacing AWS adapters with local Playwright Chromium, an Ollama structured-output extractor, local/in-memory screenshot storage, and optionally SQLite or Postgres. Browserbase is an optional hosted-browser substitute when a separate account and API key are acceptable, but it is not required for the zero-cloud path.
 
+The AWS-free implementation is now additive and operational. It defaults to two concurrent items/four isolated Playwright contexts, provides a screenshot-stream viewer plus optional headed Chromium, uses Ollama for real structured extraction, and persists Activity state, replayable events, and short-lived screenshots under a gitignored local data directory. An explicitly labelled fixture extractor permits browser-only integration testing without a model and is disabled in production.
+
 ## StraitsX lessons relevant to Scouts
 
 - StraitsX provides a one-time card MCP in sandbox and production plus XSGD settlement rails.
@@ -55,7 +57,7 @@ The repository is public. Real secrets and private keys must never be committed.
 ## Remaining external inputs
 
 - AWS account, region access, AgentCore resources, and an enabled Bedrock model.
-- A decision on whether to implement the local Playwright/Ollama fallback before or only if AWS access is delayed.
+- A locally installed Ollama model if the team chooses the real AWS-free extraction profile; the fixture profile and browser smoke test do not need a model.
 - The production UI repository or integration branch.
 - Closer's merchant-payment eligibility rules, if it exposes any beyond accepting the selected URL.
 - Two or three merchants verified to work reliably for the live demo, while the product remains merchant-agnostic.

@@ -8,11 +8,11 @@ It accepts product requirements that have already been confirmed by the user, as
 
 ## Current status
 
-The local workflow is runnable today without AWS credentials or a model API key. It uses deterministic mock Scouts so the coordinator, concurrency rules, comparison, event stream, screenshots, rejection flow, and Closer handoff can be tested end to end.
+The workflow now has two runnable AWS-free profiles. `mock` uses deterministic Scouts for fast development and CI. `local` launches real Playwright Chromium sessions, searches public pages, captures real screenshots, persists state to disk, and uses either Ollama for real structured extraction or an explicitly labelled fixture extractor for browser-only testing.
 
-The real-browser implementation is also present, but it is a separate AgentCore application. It currently requires AWS credentials, AgentCore Browser access, DynamoDB, S3, and an enabled Bedrock model before it can extract real merchant listings.
+The AWS implementation remains available as a separate AgentCore application. It requires AWS credentials, AgentCore Browser access, DynamoDB, S3, and an enabled Bedrock model.
 
-An AWS-free production fallback is described in [AWS-free fallback](#aws-free-fallback). The necessary domain boundaries already exist, but the local Playwright and Ollama adapters are not implemented yet.
+The AWS-free implementation uses the same coordinator, state machine, Comparator, events, confirmation flow, and Closer contract as AWS mode. Switching environments changes adapters, not product behaviour.
 
 ## Contents
 
@@ -115,7 +115,7 @@ Every item receives two complementary Scouts:
 | Scout A | `broad_mainstream` | Broad queries, large retailers, mainstream marketplaces, and familiar merchants. |
 | Scout B | `specialist_independent` | Specialist retailers, independent sellers, category-specific merchants, and alternate query wording. |
 
-The real AWS driver selects Google, Bing, or DuckDuckGo based on the current recovery attempt. It extracts safe public links from search results, opens candidate pages with Playwright, and asks Bedrock to turn untrusted page text into a validated candidate object.
+Real-browser profiles rotate Google, Bing, and DuckDuckGo across recovery attempts. The local profile also falls back to product links from Shopee, Lazada, and Amazon Singapore search pages when general engines are challenged or expose no merchant results. It opens only safe public links with Playwright and asks the configured extractor to turn untrusted page text into a validated candidate object.
 
 ### Scout state machine
 
@@ -216,7 +216,7 @@ Ties are broken deterministically by confidence, total price, and finally canoni
 
 ### Deduplication
 
-Tracking parameters are removed from listing URLs. Candidates are deduplicated using their canonical URL, merchant, seller, and product variant. The same product sold by different sellers remains a separate candidate.
+Tracking parameters are removed from listing URLs. Amazon ASINs and Shopee shop/item IDs are reduced to stable product URLs, and Lazada product queries are removed. Candidates are deduplicated using canonical URL, merchant, seller, and product variant. A candidate rejected as a duplicate does not count toward that Scout's quota, so it continues to the next result. The same product sold by different sellers remains a separate candidate.
 
 ## Confirmation and rejection
 
@@ -263,7 +263,7 @@ Sequence numbers are scoped to an Activity. WebSocket clients reconnect with the
 - Captured after meaningful browser actions.
 - Capped at one frame per second per Scout.
 - Real browser driver attempts an idle heartbeat every five seconds.
-- Local snapshots remain in memory.
+- Mock snapshots remain in memory. Local-agent snapshots are stored under the gitignored `.happy-data/` directory and retained for one day.
 - AWS snapshots are encrypted in S3 and expire after one day.
 - Persistent state stores object keys, never expired presigned URLs.
 
@@ -273,24 +273,24 @@ The UI should use lightweight snapshots for all Scout tiles. It should request f
 
 In AWS mode, the backend creates a five-minute presigned AgentCore Live View WebSocket URL. It is temporary and must never be committed or logged. The application does not proxy the video stream.
 
-Local mock mode has no real browser session, so `POST /v1/scouts/{scoutId}/live-view-url` returns `503 live_view_unavailable`.
+Mock mode has no real browser session, so `POST /v1/scouts/{scoutId}/live-view-url` returns `503 live_view_unavailable`. Local mode returns a temporary URL for the built-in snapshot viewer. The viewer refreshes the latest screenshot and structured Scout state; it is observability, not interactive remote browser control.
 
 ## Runtime modes
 
-| Capability | Local mock today | AWS implementation | Proposed AWS-free fallback |
+| Capability | Mock | Local agent (AWS-free) | AWS implementation |
 |---|---|---|---|
-| Browser | Synthetic browser snapshots | AgentCore Browser + Playwright/CDP | Local Playwright Chromium or Browserbase |
-| Extraction model | Deterministic fixtures | Amazon Bedrock | Ollama or another provider adapter |
-| State | In-memory | DynamoDB | In-memory for demo; SQLite/Postgres for persistence |
-| Screenshots | In-memory | Encrypted S3 | Local filesystem or S3-compatible object storage |
-| Events | Fastify WebSocket | API Gateway WebSocket + Lambda publisher | Fastify WebSocket |
-| Live browser view | Not available | AgentCore Live View | Headed local browser or Browserbase Live View |
-| Credentials required | None | AWS credentials and model access | None for local Playwright + Ollama |
-| Implemented | Yes | Adapters and partial infrastructure | Not yet |
+| Browser | Synthetic snapshots | Local Playwright Chromium | AgentCore Browser + Playwright/CDP |
+| Extraction | Deterministic fixtures | Ollama; fixture opt-in for browser testing | Amazon Bedrock |
+| State | Memory | Atomic local JSON + event files | DynamoDB |
+| Screenshots | Memory | Gitignored local filesystem | Encrypted S3 |
+| Events | Fastify WebSocket | Fastify WebSocket | API Gateway WebSocket publisher |
+| Expanded view | Unavailable | Built-in snapshot viewer; optional headed Chromium | AgentCore Live View |
+| Credentials | None | None | AWS credentials and model access |
+| Command | `pnpm dev:mock` | `pnpm dev:local-agent` | `apps/agentcore` deployment path |
 
 ### Important mode clarification
 
-`pnpm dev` always wires the local Fastify API to `MockScoutDriver`, `InMemoryActivityStore`, and `InMemorySnapshotStore`. Changing `SCOUT_MODE=aws` does not switch that API to the real driver today; `SCOUT_MODE` is currently only reported by the health endpoint.
+`pnpm dev` and `pnpm dev:mock` use the safe mock profile. `pnpm dev:local-agent` selects the real local-browser profile. `SCOUT_MODE=aws` is deliberately rejected by the local API because the AWS runtime is still a separate application in `apps/agentcore`.
 
 The real AWS code runs through the separate `@happy/agentcore` application in `apps/agentcore`.
 
@@ -327,6 +327,70 @@ You should see:
 - Final Activity status `awaiting_confirmation`.
 
 This proves the application workflow. It does not prove that Google, Shopee, or another real merchant can be browsed and extracted successfully.
+
+### Test a real browser without AWS or a model
+
+Install the Playwright-managed Chromium version pinned by this workspace:
+
+```bash
+pnpm browser:install
+```
+
+Run the standalone Google-to-Shopee visual smoke test:
+
+```bash
+pnpm smoke:local-browser
+```
+
+Open [http://127.0.0.1:3002](http://127.0.0.1:3002) while the command is running. The page shows the current stage, URL, and latest real Chromium screenshot. It opens Google, searches Google for the configured product on Shopee, and then opens Shopee search directly. This test requires no Bedrock model ID, Ollama model, Browserbase token, or AWS account.
+
+Useful smoke settings:
+
+```bash
+LOCAL_BROWSER_HEADLESS=false pnpm smoke:local-browser
+SMOKE_PRODUCT_QUERY="wireless earbuds" pnpm smoke:local-browser
+LOCAL_SMOKE_HOLD_MS=120000 pnpm smoke:local-browser
+```
+
+Dynamic merchant pages receive a five-second render window and are recaptured every two seconds. Increase the initial window when testing a slow site with `LOCAL_SMOKE_TARGET_SETTLE_MS=10000`.
+
+The smoke destination can also be changed without editing code:
+
+```bash
+SMOKE_PRODUCT_QUERY="National University of Singapore" \
+SMOKE_TARGET_SITE=nus.edu.sg \
+SMOKE_TARGET_LABEL=NUS \
+SMOKE_TARGET_URL=https://www.nus.edu.sg/ \
+pnpm smoke:local-browser
+```
+
+### Run the complete local agent with fixture extraction
+
+This combines real browsing and real screenshots with deterministic candidate fields. It is intended for wiring and observability tests, not product-quality evaluation:
+
+```bash
+LOCAL_EXTRACTION_MODE=fixture pnpm dev:local-agent
+```
+
+Open [http://localhost:5173](http://localhost:5173), start an Activity, expand a Scout to open its local viewer, reject a selection if desired, then confirm selected items to inspect the exact Closer handoff. The API health response identifies the active profile:
+
+```bash
+curl http://localhost:3001/health
+```
+
+Expected identifying fields are `mode: "local"`, `browser: "playwright"`, `extraction: "fixture"`, and `persistence: "local_disk"`.
+
+### Run the complete local agent with Ollama
+
+Install and start Ollama separately, install a model of your choice, and set its exact installed name:
+
+```bash
+OLLAMA_MODEL="your-installed-model" pnpm dev:local-agent
+```
+
+The API checks `/api/tags` during startup and fails clearly if Ollama is unreachable or that model is absent. It never silently substitutes fixture data. Each page is framed as untrusted content, Ollama receives a JSON schema, and the result must pass Zod validation. One repair request is attempted for malformed output. The deterministic Comparator—not Ollama—selects the winner.
+
+Local results and screenshots survive API restarts in `.happy-data/`. Delete that directory manually only when you intentionally want a fresh local state. It is ignored by Git.
 
 ## Manual API walkthrough
 
@@ -431,7 +495,9 @@ After reconnecting, replace `0` with the last sequence the client processed. The
 | `POST` | `/v1/scout-runs/{activityId}/confirm` | Confirm selected item IDs. |
 | `GET` | `/v1/scout-runs/{activityId}/closer-handoff` | Retrieve confirmed URLs. |
 | `GET` | `/v1/scouts/{scoutId}/snapshot` | Return or redirect to the latest snapshot. |
+| `GET` | `/v1/scouts/{scoutId}/state` | Return the Scout, item name, and current structured state. |
 | `POST` | `/v1/scouts/{scoutId}/live-view-url` | Generate a short-lived real-browser view when supported. |
+| `GET` | `/v1/scouts/{scoutId}/live` | Render the local snapshot viewer returned by local Live View. |
 | `GET WS` | `/v1/events` | Replay and stream Activity events. |
 
 ## Testing
@@ -478,6 +544,10 @@ The tests currently cover:
 - One-Scout failure with low-coverage selection.
 - Non-fatal screenshot storage failure.
 - Confirmation and Closer handoff.
+- Atomic local-disk persistence, optimistic versions, idempotency, and event replay.
+- Filesystem snapshot retention and traversal protection.
+- Portable browser-driver stage flow and duplicate acceptance semantics.
+- Ollama schema repair and local-profile configuration checks.
 
 ## Real AWS agent
 
@@ -535,7 +605,7 @@ Without Bedrock you can still test the complete mock workflow. You cannot curren
 
 If the hackathon AWS account or invitation does not arrive, the workflow does not need to be discarded. The domain, coordinator, comparator, contracts, and UI protocol are already AWS-independent.
 
-### Recommended fallback architecture
+### Implemented fallback architecture
 
 ```mermaid
 flowchart LR
@@ -544,17 +614,17 @@ flowchart LR
   COORD --> LPW["Local Playwright Chromium"]
   COORD --> MODEL["Ollama structured extraction"]
   COORD --> CMP["Existing deterministic Comparator"]
-  COORD --> STATE["Memory, SQLite, or Postgres"]
+  COORD --> STATE["Atomic local JSON and event files"]
   LPW --> SHOTS["Local screenshot store"]
 ```
 
-The recommended zero-cloud demo stack is:
+The implemented zero-cloud demo stack is:
 
 - **Browser:** local Playwright Chromium.
 - **Extraction:** local Ollama with JSON-schema structured outputs.
 - **Coordinator and API:** the existing TypeScript runtime and Fastify API.
-- **State:** in-memory for a short demo; SQLite or Postgres if restart persistence matters.
-- **Snapshots:** local filesystem or in-memory storage.
+- **State:** atomic local JSON files with optimistic versions and 24-hour event replay.
+- **Snapshots:** local filesystem with opaque hashed paths, one-day expiry, and per-Scout retention.
 - **Events:** the existing Fastify WebSocket stream.
 - **Visualization:** screenshot tiles plus an optional headed Chromium window for one expanded Scout.
 
@@ -571,17 +641,17 @@ AWS services are behind interfaces in `@happy/runtime`:
 - `LiveViewProvider`
 - `ActivityInvoker`
 
-An AWS-free implementation only needs new adapters. The coordinator, state machine, deterministic comparison, event contracts, rejection logic, and Closer handoff do not need to change.
+Those adapters now implement the existing ports. The coordinator, state machine, deterministic comparison, event contracts, rejection logic, and Closer handoff remain shared.
 
-### Adapters to add
+### Local adapters
 
 | Adapter | Replaces | Responsibility |
 |---|---|---|
-| `LocalPlaywrightScoutDriver` | `BedrockBrowserScoutDriver` browser portion | Launch Chromium, search, navigate, extract page text, and capture screenshots. |
+| `BrowserScoutDriver` + `LocalPlaywrightBrowserSessions` | `BedrockBrowserScoutDriver` browser portion | Launch isolated contexts, search, navigate, extract page text, and capture screenshots. |
 | `OllamaCandidateExtractor` | Bedrock `Converse` | Convert untrusted page content to candidate JSON and validate it with Zod. |
 | `FileSnapshotStore` | S3 | Store short-lived images outside Git. |
-| Optional `SQLiteActivityStore` | DynamoDB | Persist Activity state and events across restarts. |
-| `LocalLiveViewProvider` | AgentCore Live View | Return a local headed-browser/debug page, or report that snapshot-only mode is active. |
+| `LocalDiskActivityStore` | DynamoDB | Atomically persist Activity state and replayable events across restarts. |
+| `LocalLiveViewProvider` | AgentCore Live View | Return the built-in snapshot and state viewer. |
 
 ### Optional Browserbase path
 
@@ -591,7 +661,7 @@ This is optional because it still requires a Browserbase account and API key. It
 
 ### Capacity trade-off
 
-Ten simultaneous local Chromium processes may be too heavy for a hackathon laptop. The concurrency limit should therefore become configuration:
+The local adapter shares one Chromium process while giving each Scout an isolated browser context. Laptop capacity is configurable:
 
 ```env
 MAX_CONCURRENT_ITEMS=2
@@ -609,7 +679,7 @@ Chromium -> Google search -> Shopee listing -> screenshot -> structured extracti
 
 Google or Shopee may show bot challenges, consent pages, or CAPTCHAs. The Scout must display the condition through observability and fail or try a backup strategy; it must never attempt to bypass a CAPTCHA.
 
-Until `LocalPlaywrightScoutDriver` is implemented, the current local demo does not visit Google or Shopee.
+`pnpm smoke:local-browser` performs this exact navigation and exposes the screenshot viewer at port 3002. Search engines and merchants may still present challenges or change markup; the full Scout uses alternate engines and reports exhaustion instead of bypassing access controls.
 
 ## Repository structure
 
@@ -623,7 +693,8 @@ Until `LocalPlaywrightScoutDriver` is implemented, the current local demo does n
 │   ├── aws/             # DynamoDB, S3, AgentCore Browser, Bedrock, WebSocket adapters
 │   ├── contracts/       # Zod schemas and public TypeScript types
 │   ├── core/            # State machine, URL security, dedupe, deterministic scoring
-│   └── runtime/         # Coordinator, ports, mock drivers, in-memory adapters
+│   ├── runtime/         # Coordinator, portable browser driver, ports, mock adapters
+│   └── local/           # Playwright, Ollama, disk state, snapshots, local viewer
 ├── infra/               # TypeScript CDK stack
 ├── tests/               # Unit and coordinator integration tests
 ├── agentcore/           # AgentCore configuration
@@ -687,11 +758,10 @@ Scouts may not:
 
 ## Known limitations
 
-- The local API is mock-only even if `SCOUT_MODE` is changed.
-- A local Playwright/Ollama fallback is designed but not implemented.
-- There is no Bedrock-free real-browser mode yet.
-- There is no permanent browser-view URL; real Live View URLs exist only for active sessions and expire after five minutes.
-- Google, Shopee, and other merchants have not yet been validated through an AWS smoke test.
+- Search-result extraction is generic rather than merchant-specific; some engines and merchants can return consent pages, irrelevant utility links, bot challenges, or CAPTCHAs.
+- The fixture extraction profile proves browser and workflow integration but does not prove candidate facts are accurate. Use Ollama for real evidence extraction.
+- The local expanded view is a refreshed screenshot stream, not interactive Browserbase- or AgentCore-style remote desktop control.
+- Google-to-Shopee navigation has been validated locally; merchant-specific end-to-end extraction still depends on the selected Ollama model and live site markup.
 - Search-result link extraction is intentionally simple and may be affected by consent pages, layout changes, bot protection, or CAPTCHAs.
 - Merchant payment eligibility is currently supplied as a candidate field; the Closer-owned eligibility adapter is not integrated.
 - CDK does not yet deploy the production HTTP control API, AgentCore Runtime, or authentication.
@@ -702,11 +772,15 @@ Scouts may not:
 
 ### `pnpm dev` works, but no real websites appear
 
-That is expected. The local API uses deterministic mock Scouts and synthetic snapshots.
+That is expected because `pnpm dev` intentionally defaults to mock. Use `LOCAL_EXTRACTION_MODE=fixture pnpm dev:local-agent` for a real browser without a model, or configure Ollama and run `pnpm dev:local-agent` for real extraction.
 
 ### Live View returns `503`
 
-That is expected in mock mode because no real browser session exists.
+That is expected only in mock mode because no real browser session exists. Local mode returns its built-in snapshot-view URL.
+
+### Local mode exits before the API starts
+
+If the error names Playwright, run `pnpm browser:install`. If it names Ollama, check that Ollama is running and that `OLLAMA_MODEL` exactly matches an entry returned by its local `/api/tags` endpoint. Use `LOCAL_EXTRACTION_MODE=fixture` only when you intentionally want browser-only integration data.
 
 ### `BEDROCK_MODEL_ID` contains the placeholder
 
@@ -728,6 +802,7 @@ The Scout retries using backup search strategies. Persistent merchant-specific f
 
 - [Product context](./CONTEXT.md)
 - [Approved implementation plan](./SCOUTS_IMPLEMENTATION_PLAN.md)
+- [AWS-free implementation plan](./AWS_FREE_IMPLEMENTATION_PLAN.md)
 - [System design](./SYSTEM_DESIGN.md)
 - [Non-technical walkthrough](./WALKTHROUGH.md)
 - [OpenAPI contract](./openapi.yaml)

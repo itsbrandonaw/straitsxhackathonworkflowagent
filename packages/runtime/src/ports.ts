@@ -5,6 +5,7 @@ import type {
   ItemSearchRequest,
   ScoutRecord,
   ScoutStage,
+  ScoutStrategy,
   StartScoutRunRequest
 } from "@happy/contracts";
 
@@ -16,6 +17,7 @@ export interface ActivityStore {
   save(activity: ActivityRecord, expectedVersion: number): Promise<void>;
   appendEvent(event: ActivityEvent): Promise<void>;
   eventsAfter(activityId: string, sequence: number): Promise<ActivityEvent[]>;
+  findByScoutId?(scoutId: string): Promise<ActivityRecord | undefined>;
 }
 
 export interface EventPublisher {
@@ -25,7 +27,8 @@ export interface EventPublisher {
 export type ScoutRunCallbacks = {
   onStage(stage: ScoutStage, detail?: string): Promise<void>;
   onBrowserSession(sessionId: string): Promise<void>;
-  onCandidate(candidate: Candidate): Promise<void>;
+  /** Returns true only when the coordinator accepted this candidate into the shared item pool. */
+  onCandidate(candidate: Candidate): Promise<boolean>;
   onScreenshot(bytes: Uint8Array, contentType: string): Promise<void>;
 };
 
@@ -64,3 +67,53 @@ export interface LiveViewProvider {
 export interface ActivityInvoker {
   invoke(request: StartScoutRunRequest, idempotencyKey: string): Promise<void>;
 }
+
+export interface BrowserPage {
+  goto(url: string, timeoutMs?: number): Promise<void>;
+  links(): Promise<string[]>;
+  text(maxCharacters: number): Promise<string>;
+  screenshot(): Promise<Uint8Array>;
+  url(): Promise<string>;
+}
+
+export type BrowserSessionHandle = {
+  id: string;
+  page: BrowserPage;
+};
+
+export interface BrowserSessionProvider {
+  start(input: {
+    activityId: string;
+    itemId: string;
+    scoutId: string;
+    locale: string;
+  }): Promise<BrowserSessionHandle>;
+  stop(session: BrowserSessionHandle): Promise<void>;
+  close?(): Promise<void>;
+}
+
+export interface CandidateExtractor {
+  extract(input: {
+    activityId: string;
+    item: ItemSearchRequest;
+    scout: ScoutRecord;
+    canonicalUrl: string;
+    untrustedPageText: string;
+  }): Promise<Candidate>;
+}
+
+export interface SearchSource {
+  discover(input: {
+    item: ItemSearchRequest;
+    strategy: ScoutStrategy;
+    attempt: number;
+    page: BrowserPage;
+  }): Promise<string[]>;
+}
+
+export type RuntimeInfo = {
+  mode: "mock" | "local" | "aws";
+  browser: "synthetic" | "playwright" | "agentcore";
+  extraction: "fixture" | "ollama" | "bedrock";
+  persistence: "memory" | "local_disk" | "dynamodb";
+};

@@ -10,6 +10,12 @@
 
 - Install: `pnpm install`
 - Local API and harness: `pnpm dev`
+- Explicit mock API and harness: `pnpm dev:mock`
+- Real local browser API and harness: `pnpm dev:local-agent` (requires a configured Ollama model by default)
+- Browser-only local integration: `LOCAL_EXTRACTION_MODE=fixture pnpm dev:local-agent`
+- Install pinned Chromium: `pnpm browser:install`
+- Google-to-Shopee visual smoke: `pnpm smoke:local-browser`
+- Custom visual destination: set `SMOKE_TARGET_SITE`, `SMOKE_TARGET_LABEL`, and `SMOKE_TARGET_URL` before `pnpm smoke:local-browser`.
 - Typecheck: `pnpm typecheck`
 - Tests: `pnpm test`
 - Build: `pnpm build`
@@ -21,6 +27,7 @@
 
 - TypeScript domain logic must not import AWS SDK packages.
 - AWS behavior belongs behind ports in `@happy/runtime` and adapters in `@happy/aws`.
+- AWS-free Playwright, Ollama, disk, and snapshot behavior belongs in `@happy/local`; keep the coordinator and Comparator provider-independent.
 - Any AWS-free Playwright, Ollama, filesystem, or SQLite implementation must use the same runtime ports; do not fork the coordinator or Comparator.
 - Persist Activity state before publishing its event.
 - Never run more than five item pairs or ten Scouts concurrently.
@@ -30,6 +37,8 @@
 - Keep action screenshots capped at one frame per second per Scout; the real browser driver supplies a five-second idle heartbeat.
 - WebSocket consumers must reconnect from their last Activity sequence and coalesce state refreshes rather than polling once per event.
 - Closer receives only `{ activityId, selections: [{ itemId, url }] }`.
+- `LOCAL_EXTRACTION_MODE=fixture` combines real browsing with fabricated candidate fields. Keep it visibly labelled, disable it in production, and never treat it as product-evidence validation.
+- Local state and screenshots live under the configured `LOCAL_DATA_DIR` (default `.happy-data/`) and must remain ignored by Git.
 
 ## Security
 

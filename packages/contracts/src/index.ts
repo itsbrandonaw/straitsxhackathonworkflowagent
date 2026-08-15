@@ -142,6 +142,7 @@ export type ScoutRecord = {
   listingsGathered: number;
   browserSessionId?: string;
   snapshotKey?: string;
+  detail?: string;
   error?: string;
 };
 

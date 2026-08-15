@@ -5,19 +5,42 @@
 ```mermaid
 flowchart LR
   UI[Production UI or developer harness] --> API[HTTP and WebSocket API]
-  API --> DB[(DynamoDB or in-memory store)]
+  API --> DB[(Memory, local disk, or DynamoDB)]
   API --> RT[Activity coordinator]
-  RT --> BR[AgentCore Browser sessions]
-  RT --> FM[Amazon Bedrock model]
+  RT --> BR[Browser-session port]
+  RT --> FM[Candidate-extractor port]
   RT --> CMP[Deterministic Comparator]
-  BR --> SHOT[S3 screenshots]
+  BR --> SHOT[Filesystem or S3 screenshots]
   RT --> DB
   RT --> API
-  BR -. expanded Live View .-> UI
+  BR -. expanded viewer .-> UI
   CMP --> HANDOFF[Closer handoff]
 ```
 
 One Activity coordinator owns the item queue. Five workers process item pairs, creating no more than ten browser sessions. All mutable state is persisted before its corresponding event is published.
+
+## Runtime profiles
+
+The API selects an explicit dependency profile at startup:
+
+| Profile | Browser | Extraction | State and images |
+|---|---|---|---|
+| `mock` | Synthetic | Deterministic fixtures | Memory |
+| `local` | One local Chromium process with an isolated Playwright context per Scout | Ollama, or fixture only for non-production browser tests | Atomic JSON/event files and image files under `.happy-data/` |
+| `aws` | AgentCore Browser | Bedrock | DynamoDB and S3 through the separate AgentCore application |
+
+The portable `BrowserScoutDriver` owns the search/analyze/gather loop and depends only on project ports. Playwright, Ollama, filesystem, AgentCore, Bedrock, DynamoDB, and S3 remain adapters. The Comparator is shared by every profile.
+
+```mermaid
+flowchart TB
+  DRIVER["Portable BrowserScoutDriver"] --> SESSION["BrowserSessionProvider"]
+  DRIVER --> SEARCH["SearchSource"]
+  DRIVER --> EXTRACT["CandidateExtractor"]
+  SESSION --> LOCAL_BROWSER["Local Playwright"]
+  SESSION --> AWS_BROWSER["AgentCore Browser"]
+  EXTRACT --> OLLAMA["Ollama"]
+  EXTRACT --> BEDROCK["Bedrock"]
+```
 
 ## State
 
@@ -66,12 +89,13 @@ The default preset weights Price 40%, Authenticity 35%, and Reviews 25%. Other p
 
 ## Observability
 
-Progress and visual streams are independent. A Scout captures after meaningful actions at no more than one frame per second and emits an idle frame every five seconds. S3 objects are encrypted, expire after one day, and are accessed through short-lived URLs. Expanded views use a direct presigned AgentCore Live View connection instead of proxying video through the API.
+Progress and visual streams are independent. A Scout captures after meaningful actions at no more than one frame per second and emits an idle frame every five seconds. AWS S3 objects are encrypted, expire after one day, and use short-lived URLs. Local images use opaque hashed paths, one-day expiry, and a five-image per-Scout cap. Local expanded views refresh the latest image and structured state; AWS expanded views use direct presigned AgentCore Live View rather than proxying video.
 
 ## Security boundary
 
 - Page content is untrusted data and never becomes system or tool instruction.
 - Navigation is limited to public HTTP/HTTPS targets; localhost, private IPs, file URLs, and executable schemes are rejected.
+- The local browser resolves requested hostnames and blocks routes whose resolved addresses are private, loopback, link-local, or otherwise non-public.
 - Scouts cannot authenticate, add to cart, download, request cards, or perform payment operations.
 - Logs, fixtures, prompts, screenshots, and events are sanitized.
 - Runtime secrets come from environment variables or AWS Secrets Manager and never enter repository files.
@@ -84,6 +108,7 @@ Progress and visual streams are independent. A Scout captures after meaningful a
 - A screenshot or Live View failure is logged but does not fail research.
 - Browser sessions close in `finally` blocks and abandoned sessions are eligible for cleanup.
 - Rejection advances through retained rankings before restarting only that item.
+- A duplicate rejected by the shared pool does not count toward a Scout's one-to-three candidate quota.
 
 ## Integration contracts
 

@@ -51,7 +51,9 @@ describe("ScoutCoordinator", () => {
       maxConcurrentItems: 5
     });
     const created = await coordinator.start(request(6), "idempotency-6");
-    expect(created.items.flatMap((item) => item.scouts)).toHaveLength(12);
+    const createdScouts = created.items.flatMap((item) => item.scouts);
+    expect(createdScouts).toHaveLength(12);
+    expect(new Set(createdScouts.map((scout) => scout.id)).size).toBe(12);
 
     let observedQueuedOverflow = false;
     while ((await coordinator.get(created.id)).status === "searching") {
@@ -101,6 +103,23 @@ describe("ScoutCoordinator", () => {
     const rejected = await coordinator.reject(first.id, "item-1", "show me another");
     expect(rejected.items[0]?.selectedCandidateId).not.toBe(original);
     expect(rejected.items[0]?.rejectedCandidateIds).toContain(original);
+  });
+
+  it("creates globally unique Scout IDs when Activities reuse an item ID", async () => {
+    const coordinator = new ScoutCoordinator({
+      store: new InMemoryActivityStore(),
+      publisher: new EventHub(),
+      driver: new MockScoutDriver(1, 2),
+      snapshots: new InMemorySnapshotStore(),
+      liveView: new LocalUnavailableLiveViewProvider()
+    });
+    const firstRequest = { ...request(1), activityId: "activity-a" };
+    const secondRequest = { ...request(1), activityId: "activity-b" };
+    const first = await coordinator.start(firstRequest, "activity-a-key");
+    const second = await coordinator.start(secondRequest, "activity-b-key");
+    const firstIds = new Set(first.items[0]!.scouts.map((scout) => scout.id));
+    expect(second.items[0]!.scouts.every((scout) => !firstIds.has(scout.id))).toBe(true);
+    await Promise.all([coordinator.waitForIdle(first.id), coordinator.waitForIdle(second.id)]);
   });
 
   it("restarts only the rejected item after its first three ranked choices are exhausted", async () => {

@@ -18,7 +18,9 @@ The remaining listings receive explainable scores for price, seller/listing auth
 
 ## Live visibility
 
-Every tile receives lightweight screenshots so all Scouts remain observable without streaming ten full videos. Expanding a Scout opens its AgentCore Live View. If imagery temporarily fails, the Scout continues and its stage updates remain visible.
+Every tile receives lightweight screenshots so all Scouts remain observable without streaming ten full videos. On AWS, expanding a Scout opens its AgentCore Live View. In the AWS-free setup, it opens a local page that refreshes the latest real Chromium screenshot and stage details. A developer can also run Chromium headed. If imagery temporarily fails, the Scout continues and its stage updates remain visible.
+
+The same experience has three operating modes. Mock mode is fast and deterministic for UI work. Local-agent mode performs real browsing with Playwright and can use a local Ollama model, so it needs no AWS account or model API key. AWS mode uses the managed AgentCore, Bedrock, DynamoDB, and S3 services. The user-facing stages and Closer output stay the same in every mode.
 
 ## Selection and handoff
 

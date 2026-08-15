@@ -1,3 +1,4 @@
+export * from "./browser-scout.js";
 export * from "./coordinator.js";
 export * from "./event-hub.js";
 export * from "./memory-store.js";

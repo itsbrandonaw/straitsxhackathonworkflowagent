@@ -85,9 +85,21 @@ paths:
           required: true
           schema: { type: string }
       responses: { "200": { description: Image }, "302": { description: Presigned S3 image } }
+  /v1/scouts/{scoutId}/state:
+    get:
+      summary: Return a Scout's current structured state
+      parameters:
+        - $ref: "#/components/parameters/ScoutId"
+      responses: { "200": { description: Scout state and item context } }
+  /v1/scouts/{scoutId}/live:
+    get:
+      summary: Render the local low-rate screenshot viewer
+      parameters:
+        - $ref: "#/components/parameters/ScoutId"
+      responses: { "200": { description: Local Scout viewer HTML }, "404": { description: Scout not found } }
   /v1/scouts/{scoutId}/live-view-url:
     post:
-      summary: Generate an AgentCore Live View URL
+      summary: Generate a provider-specific expanded Scout-view URL
       parameters:
         - in: path
           name: scoutId
@@ -99,6 +111,11 @@ components:
     ActivityId:
       in: path
       name: activityId
+      required: true
+      schema: { type: string }
+    ScoutId:
+      in: path
+      name: scoutId
       required: true
       schema: { type: string }
   schemas:
